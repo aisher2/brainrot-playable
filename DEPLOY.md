@@ -157,21 +157,7 @@ top of `fly.toml` to a name nobody has taken first.
 You end up on `https://<your-app>.fly.dev` with HTTPS, WSS, real 1v1, friend
 codes, and a world leaderboard that survives redeploys.
 
-### Render - serves the game, but NOT multiplayer
-
-> **Tested and confirmed: Render does not carry this game's WebSockets.**
-> The upgrade reaches the app and the app answers with a byte-correct
-> handshake, but the tunnel is never established: no frames flow in either
-> direction and the socket closes after ~2.5s. An independent, textbook
-> WebSocket echo sharing no code with `server/ws.js` fails identically
-> through Render while both work locally, so the fault is the platform
-> rather than the relay.
->
-> Render is still fine for the game itself and for the leaderboard API
-> (plain HTTP, verified working end to end). Set the environment variable
-> `STB_RELAY=off` there so PLAY starts a practice match instead of failing.
-> For real 1v1 and friend rooms, use Fly.io.
-
+### Render
 1. Push this folder to a GitHub repo.
 2. Render → **New → Web Service** → pick the repo. `render.yaml` is already
    here, so it fills in:

@@ -12,7 +12,7 @@ import net from 'node:net';
 import tls from 'node:tls';
 import crypto from 'node:crypto';
 
-const GUID = '258EAFA5-E914-47DA-95CA-5AB0DC85B11F';
+const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const OP = { CONT: 0x0, TEXT: 0x1, BIN: 0x2, CLOSE: 0x8, PING: 0x9, PONG: 0xa };
 
 export class NodeWebSocket {

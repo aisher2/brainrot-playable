@@ -244,6 +244,36 @@ try {
     }
   }
 
+  /* The WebSocket handshake, pinned to RFC 6455's own published vector.
+
+     This has to come from OUTSIDE our code. The server and the test client
+     each held their own copy of the magic string, both wrong in the same
+     way, so they agreed with each other perfectly while every real browser
+     and CDN refused the connection. A shared constant cannot check itself. */
+  {
+    const crypto = await import('node:crypto');
+    const RFC_KEY = 'dGhlIHNhbXBsZSBub25jZQ==';
+    const RFC_ACCEPT = 's3pPLMBiTxaQ9kYGzzhZRbK+xOo=';
+
+    const src = await import('node:fs').then((fs) =>
+      fs.readFileSync(path.join(ROOT, 'server', 'ws.js'), 'utf8'));
+    const guid = /const GUID = '([^']+)'/.exec(src)?.[1];
+    if (!guid) throw new Error('could not find GUID in server/ws.js');
+
+    const accept = crypto.createHash('sha1').update(RFC_KEY + guid).digest('base64');
+    if (accept !== RFC_ACCEPT) {
+      throw new Error(`handshake magic string is wrong: key ${RFC_KEY} produced ${accept}, `
+        + `RFC 6455 requires ${RFC_ACCEPT}`);
+    }
+
+    // the test client must agree with the spec too, not merely with the server
+    const csrc = await import('node:fs').then((fs) =>
+      fs.readFileSync(path.join(ROOT, 'tools', 'wsclient.mjs'), 'utf8'));
+    const cguid = /const GUID = '([^']+)'/.exec(csrc)?.[1];
+    if (cguid !== guid) throw new Error('test client and server disagree on the magic string');
+    console.log('  ws    handshake matches the RFC 6455 published vector (server and client)');
+  }
+
   // the wire has to carry ability state and live bananas
   {
     const s = createSim(99, {});

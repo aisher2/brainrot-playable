@@ -11,7 +11,12 @@
 const crypto = require('crypto');
 const { EventEmitter } = require('events');
 
-const GUID = '258EAFA5-E914-47DA-95CA-5AB0DC85B11F';
+/* RFC 6455 magic string. Verified against the spec's published vector:
+   key 'dGhlIHNhbXBsZSBub25jZQ==' must yield 's3pPLMBiTxaQ9kYGzzhZRbK+xOo='.
+   Getting this wrong is invisible to a test client that shares the mistake -
+   every strict client (browsers, CDNs) silently refuses the connection.
+   tools/check.mjs pins it to that external vector. */
+const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const MAX_FRAME = 1 << 20;          // 1 MB hard ceiling per message
 
 const OP = { CONT: 0x0, TEXT: 0x1, BIN: 0x2, CLOSE: 0x8, PING: 0x9, PONG: 0xa };

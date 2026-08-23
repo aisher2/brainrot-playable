@@ -1,0 +1,31 @@
+# Cloudflare Workers deploy: the game, the relay, friend rooms and the world
+# leaderboard, all on the free plan with no card.
+#
+#   npm run build            # writes dist/, which is served as static assets
+#   npx wrangler login       # opens a browser once
+#   npx wrangler deploy
+#
+# You land on https://steal-the-brainrot.<your-subdomain>.workers.dev
+
+name = "steal-the-brainrot"
+main = "worker/index.js"
+compatibility_date = "2025-04-01"
+
+# The built game. The Worker only handles /ws, /api and /health; everything
+# else is served straight from here.
+[assets]
+directory = "dist"
+binding = "ASSETS"
+
+# One Durable Object holds the matchmaking queue, the private rooms and the
+# leaderboard. Ordinary isolates each get their own memory, so two players
+# could never find each other; a DO is a single shared instance.
+[[durable_objects.bindings]]
+name = "RELAY"
+class_name = "Relay"
+
+# SQLite is the storage backend available on the free plan, and it makes the
+# world leaderboard durable without a mounted volume.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Relay"]
