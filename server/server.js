@@ -22,7 +22,6 @@ const path = require('path');
 const zlib = require('zlib');
 const crypto = require('crypto');
 const { attach } = require('./ws');
-const { attachEcho } = require('./wsecho');   // TEMP diagnostic
 
 const PORT = Number(process.env.PORT || 8080);
 /** `--root dist` serves the built bundle instead of the source tree. */
@@ -398,8 +397,6 @@ function leaveRoom(c, notify = true) {
   c.peer = null;
   if (room) log(`room ${room.a}/${room.b} closed`);
 }
-
-attachEcho(server);   // TEMP: independent reference implementation on /wsecho
 
 attach(server, '/ws', (conn) => {
   if (clients.size >= MAX_CLIENTS) {
