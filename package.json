@@ -15,7 +15,10 @@
     "servercheck": "node tools/servercheck.mjs",
     "friendcheck": "node tools/friendcheck.mjs",
     "checkall": "node tools/check.mjs && node tools/mapcheck.mjs && node tools/netcheck.mjs && node tools/servercheck.mjs && node tools/friendcheck.mjs && node tools/playcheck.mjs",
-    "mapcheck": "node tools/mapcheck.mjs"
+    "mapcheck": "node tools/mapcheck.mjs",
+    "worker:dev": "wrangler dev --port 8787 --local",
+    "worker:deploy": "node tools/build.mjs --relay=auto --leaderboard=auto && wrangler deploy",
+    "workercheck": "node tools/workercheck.mjs"
   },
   "engines": {
     "node": ">=18"

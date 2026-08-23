@@ -138,6 +138,23 @@ The included server does every job at once, with zero dependencies:
 | `GET /api/top?limit=25` | the world leaderboard |
 | `POST /api/score` | submit a score to it |
 
+### Cloudflare Workers (free plan, no card)
+
+An alternative to the Node host, in `worker/` + `wrangler.toml`. The relay
+runs as a Durable Object so every waiting player shares one queue, and the
+world leaderboard lives in that object's SQLite - durable with no volume to
+provision. Workers gives real WebSockets, so the hand-rolled RFC 6455 code is
+not used at all on this path.
+
+```
+npm run build
+npx wrangler login
+npm run worker:deploy
+```
+
+Verify a local run with `npm run worker:dev` in one terminal and
+`npm run workercheck` in another.
+
 ### Fly.io — recommended (free, keeps the leaderboard, no GitHub needed)
 
 The only free tier that gives you a persistent disk, and it deploys straight
