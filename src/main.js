@@ -45,11 +45,12 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
    BOOT
    ============================================================ */
 /**
- * The game loads in well under a second, which leaves no time to read the
- * loading gags. Hold the boot screen to this floor so a few land - short
- * enough that it still reads as a fast load. Set to 0 to disable.
+ * Floor for how long the boot screen stays up, so the loading gags are not a
+ * subliminal flash. Measured at 0: the real work already takes ~1.2s on a
+ * desktop and longer on a phone, which is three or four gags - so any padding
+ * on top was pure waiting. Raise it only if boot ever gets genuinely fast.
  */
-const MIN_BOOT_MS = 1800;
+const MIN_BOOT_MS = 0;
 
 async function boot() {
   const bootStart = Date.now();
@@ -124,7 +125,7 @@ async function boot() {
   }
 
   ui.setLoading(1, 'ready');
-  await wait(300);
+  await wait(180);
 
   ui.hideBoot();
   app.mode = 'menu';
@@ -432,7 +433,7 @@ async function startMatch(mode, opts = {}) {
   app.map = currentMap();
 
   ui.showOpponentFound(info.opp);
-  await wait(950);
+  await wait(600);   // a beat to read who you drew, not a loading screen
 
   const readInput = () => {
     const inp = app.input.read();

@@ -1,0 +1,44 @@
+# Keep the game server awake.
+#
+# Render's free plan spins an instance down after 15 minutes without traffic,
+# and waking it takes the better part of a minute. For a game you send someone
+# a link to, that cold start IS the loading time - the page, the relay and the
+# leaderboard all wait on it.
+#
+# A cheap request every 10 minutes keeps it up. One always-on free service is
+# roughly 730 instance-hours a month, inside Render's 750-hour free allowance
+# - but only if it is the ONLY service running. Delete any spare services or
+# they share the same budget.
+#
+# Set the SERVER_URL repository variable to point this at your own deployment.
+# Delete this workflow if you move to a host that does not sleep.
+
+name: Keep the server warm
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: keep-warm
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /health
+        env:
+          URL: ${{ vars.SERVER_URL }}
+        run: |
+          BASE="${URL:-https://steal-the-brainrot.onrender.com}"
+          # A sleeping instance can take ~60s to answer the first request.
+          code=$(curl -s -o /tmp/out -w '%{http_code}' --max-time 90 "$BASE/health" || echo 000)
+          echo "GET $BASE/health -> $code"
+          cat /tmp/out || true
+          # A failed ping is not worth failing the run over; the next one is
+          # ten minutes away and the service may simply be redeploying.
+          if [ "$code" != "200" ]; then
+            echo "::warning::health check returned $code"
+          fi
