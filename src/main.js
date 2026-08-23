@@ -471,6 +471,8 @@ async function startMatch(mode, opts = {}) {
   app.view.setMatch({ localIdx: info.idx, loadouts, names, brainrotId: brDef.id });
   ui.setMapName(app.map.name, session.variant);
   ui.setBombMode(session.variant === 'tagbomb');
+  // the magnet only works on a loose brainrot, which TAG BOMB never has
+  ui.setAbilityAvailable(2, session.variant !== 'tagbomb');
   app.lastTick = -1;
   ui.setMatchNames(names[0], names[1]);
   ui.setScores(0, 0);

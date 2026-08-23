@@ -665,6 +665,12 @@ export class UI extends Emitter {
     }
   }
 
+  /** Hide an ability the current mode does not use at all. */
+  setAbilityAvailable(i, on) {
+    const b = this._ability(i);
+    if (b) b.hidden = !on;
+  }
+
   /** flash the button when its ability actually fires */
   fireAbility(i) {
     const b = this._ability(i);

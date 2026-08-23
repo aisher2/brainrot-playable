@@ -383,7 +383,7 @@ function stepPlayer(s, i, input, fx) {
       if (ix || iz) p.face = Math.atan2(iz, ix);
       throwBanana(s, i, fx);
     }
-    if (input.a2 && p.cd2 <= 0 && p.ch2 > 0) {
+    if (input.a2 && p.cd2 <= 0 && p.ch2 > 0 && s.variant !== 'tagbomb') {
       p.ch2--;
       p.cd2 = CFG.ABILITY_LOCK;
       p.ultT = CFG.ULT_TIME;
@@ -607,7 +607,11 @@ function stepBananas(s, fx) {
    charge of whatever they hold. They always arrive in 180-degree mirrored
    pairs so neither spawn is ever closer to a drop than the other - the same
    fairness rule the maps follow. */
-function orbKind(rng) {
+function orbKind(rng, s) {
+  /* The magnet exists to rip a loose brainrot out of the air. In TAG BOMB
+     the bomb is strapped on and never loose, so the ability has nothing to
+     do - dropping one would just waste a pickup. Kick and banana split it. */
+  if (s.variant === 'tagbomb') return rng.next() < 0.5 ? 0 : 1;
   const r = rng.next();
   if (r < 0.4) return 0;          // yeet kick
   if (r < 0.8) return 1;          // banana
@@ -629,7 +633,7 @@ function stepOrbs(s, fx) {
   s.orbTimer -= DT;
   if (s.orbTimer <= 0 && s.orbs.length + 2 <= CFG.ORB_MAX) {
     s.orbTimer = CFG.ORB_EVERY;
-    const kind = orbKind(rng);
+    const kind = orbKind(rng, s);
     const spot = randomSpot(rng, 5, 15);
     for (const sgn of [1, -1]) {
       const x = spot.x * sgn, z = spot.z * sgn;

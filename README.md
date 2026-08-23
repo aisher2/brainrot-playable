@@ -116,6 +116,10 @@ The fuse starts at 6.5s and tightens to 3.0s by the end of the round, so late
 passes get frantic. The Brainrot reddens, smokes and shakes the camera as it
 gets close, so you never need to watch a number.
 
+The magnet is not in TAG BOMB. It exists to rip a loose brainrot out of the
+air, and the bomb is strapped on and never loose - so it had nothing to do.
+Only the kick and the banana drop there.
+
 Practice uses whichever mode is selected on the menu. Online matches derive
 it from the shared seed - the same trick the maps use - so both clients agree
 without another wire field, and the mode is announced next to the map name at
