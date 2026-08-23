@@ -405,6 +405,9 @@ canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;background
   background:conic-gradient(rgba(8,2,16,.78) var(--sweep,0deg), transparent 0deg);
   opacity:0;transition:opacity .12s;
 }
+/* .abtn sets display:grid, which beats the browser default [hidden] rule -
+   without this an ability hidden by a mode stays on screen. */
+.abtn[hidden]{display:none}
 .abtn.cooling .cd{opacity:1}
 /* how many charges you have banked for this ability */
 .abtn .cnt{
