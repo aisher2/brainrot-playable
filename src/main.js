@@ -6,7 +6,7 @@
 
 import { Emitter, clamp, clamp01, RNG } from './core/util.js';
 import {
-  initStorage, profile, publicProfile, displayName, addCoins, addXp,
+  initStorage, profile, publicProfile, displayName, setName, addCoins, addXp,
   applyMatchStats, recordResult, refreshUnlocks, collect, levelInfo,
   getSetting, setSetting, save, flush, storageBackend, store,
 } from './core/storage.js';
@@ -129,7 +129,10 @@ async function boot() {
 
   ui.hideBoot();
   app.mode = 'menu';
-  ui.show('menu');
+  // A fresh player has no name, and the fallback "BRAINROT #0I71" tells an
+  // opponent nothing. Ask once, right after the loading screen.
+  if (!profile.name) ui.showNameEntry();
+  else ui.show('menu');
   if (profile.firstRun) { profile.firstRun = false; save(); }
   ui.setOnlineAvailable(onlineEnabled());
   probeServer();
@@ -236,6 +239,12 @@ function wireUI() {
         sfx.error();
       }
     } finally { ui.setFriendPending(false); }
+  });
+
+  ui.on('nameChosen', (n) => {
+    if (n) setName(n);
+    sfx.ui();
+    ui.show('menu');
   });
 
   ui.on('cancelFriend', () => app.mm.cancel());

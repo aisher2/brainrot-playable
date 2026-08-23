@@ -160,7 +160,8 @@ canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;background
 /* ============ MENU CHROME ============ */
 .menu-top{position:absolute;top:calc(10px + var(--safe-t));left:calc(10px + var(--safe-l));right:calc(10px + var(--safe-r));display:flex;align-items:center;gap:10px}
 .lvlchip{flex:0 1 190px;margin:0 auto;background:#0000005e;border:3px solid #ffffff2e;border-radius:14px;padding:6px 13px;display:flex;flex-direction:column;gap:5px;backdrop-filter:blur(3px)}
-.lvlchip b{font-size:12px;letter-spacing:.12em;color:#ffe9a8}
+.lvlchip b{font-size:12px;letter-spacing:.12em;color:#ffe9a8;display:flex;gap:7px;align-items:baseline}
+.lvlwho{flex:1;min-width:0;color:var(--white);opacity:.9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;letter-spacing:.06em}
 .xpbar{height:7px;background:#00000066;border-radius:99px;overflow:hidden}
 .xpbar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--ok),var(--p2));border-radius:99px;transition:width .4s ease}
 .menu-foot{position:absolute;bottom:calc(10px + var(--safe-b));display:flex;gap:8px}
@@ -173,6 +174,17 @@ canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;background
 .panel.pop{animation:popIn .4s cubic-bezier(.2,1.7,.4,1)}
 @keyframes popIn{from{transform:scale(.7) rotate(-4deg);opacity:0}to{transform:none;opacity:1}}
 .panel h2{margin:0 0 14px;font-size:24px;color:var(--gold);-webkit-text-stroke:3px var(--ink);paint-order:stroke fill}
+
+/* ============ PICK YOUR NAME ============ */
+.namepanel{display:flex;flex-direction:column;gap:12px;align-items:stretch}
+.namebig{background:#00000042;border:3px solid #ffffff26;border-radius:14px;padding:10px 12px}
+.namebig input{
+  width:100%;background:none;border:none;outline:none;color:var(--white);
+  font-family:var(--font);font-size:clamp(22px,7vw,32px);letter-spacing:.1em;
+  text-transform:uppercase;text-align:center;min-width:0;
+}
+.namebig input::placeholder{color:#ffffff3d;letter-spacing:.14em}
+.namebig:focus-within{border-color:var(--gold)}
 
 /* ============ PLAY WITH A FRIEND ============ */
 .friendpanel{display:flex;flex-direction:column;gap:12px;align-items:stretch}

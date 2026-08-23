@@ -63,7 +63,7 @@ const BOOT_TIPS = [
 
 const BOOT_FACES = ['🧠', '🍌', '👑', '🦵', '💨', '😵', '🤪', '🤯', '🥴'];
 
-const SCREENS = ['menu', 'friend', 'search', 'hud', 'result', 'collect', 'custom', 'board', 'quests', 'settings'];
+const SCREENS = ['menu', 'name', 'friend', 'search', 'hud', 'result', 'collect', 'custom', 'board', 'quests', 'settings'];
 
 /** rAF, but with a timer fallback: background tabs stop firing rAF and
     thumbnails would then never appear. */
@@ -205,6 +205,26 @@ export class UI extends Emitter {
     click('btnCancelSearch', () => this.emit('cancel'));
     click('btnSoloOffer', () => this.emit('playSolo'));
     click('btnFriend', () => this.showFriend());
+    click('btnNameOk', () => this._confirmName());
+    // the chip already shows who you are, so it is where you go to change it
+    const chip = $('lvlChip');
+    if (chip) {
+      chip.style.cursor = 'pointer';
+      chip.title = 'Change your name';
+      chip.addEventListener('click', () => this.showNameEntry(profile.name));
+    }
+    click('btnNameSkip', () => { this.emit('nameChosen', ''); });
+    const pn = $('playerName');
+    if (pn) {
+      // Keep it to what survives the wire: the relay strips spaces and
+      // hyphens from names, so allowing them would silently mangle the
+      // thing the player just typed.
+      pn.addEventListener('input', () => {
+        pn.value = pn.value.toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 12);
+        this.setNameError('');
+      });
+      pn.addEventListener('keydown', (e) => { if (e.code === 'Enter') this._confirmName(); });
+    }
     click('btnFriendBack', () => { this.emit('cancelFriend'); this.show('menu'); });
     click('btnMakeRoom', () => { this.setFriendError(''); this.emit('makeRoom'); });
     click('btnJoinRoom', () => {
@@ -311,6 +331,7 @@ export class UI extends Emitter {
   _refreshLevel() {
     const li = levelInfo();
     const n = $('lvlNum'); if (n) n.textContent = li.level;
+    const who = $('lvlWho'); if (who) who.textContent = displayName();
     const f = $('xpFill'); if (f) f.style.width = Math.round(li.pct * 100) + '%';
     this._refreshCoins();
   }
@@ -318,6 +339,31 @@ export class UI extends Emitter {
   _refreshCoins() {
     const c = $('coinCount');
     if (c) c.textContent = profile.coins + ' 🧠';
+  }
+
+  /* ==================================================== who are you */
+  /** First run asks for a name; the menu chip reopens this any time. */
+  showNameEntry(current) {
+    this.show('name');
+    this.setNameError('');
+    const pn = $('playerName');
+    if (pn) {
+      pn.value = (current || '').toUpperCase();
+      // Autofocus opens the keyboard on a phone, which is what you want on
+      // a screen whose only job is typing.
+      setTimeout(() => { try { pn.focus(); } catch (_) { /* ignore */ } }, 60);
+    }
+  }
+
+  setNameError(msg) {
+    const e = $('nameErr');
+    if (e) e.textContent = msg || '';
+  }
+
+  _confirmName() {
+    const v = ($('playerName')?.value || '').toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 12);
+    if (!v) { this.setNameError('Type a name, or skip for a random one.'); sfx.error(); return; }
+    this.emit('nameChosen', v);
   }
 
   /* ==================================================== play with a friend */
