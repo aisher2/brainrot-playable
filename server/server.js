@@ -45,6 +45,9 @@ const BOARD_MAX_SCORE = 2000;        // a 60s round cannot plausibly beat this
 const SUBMITS_PER_HOUR = 40;         // per IP
 
 /* ---- private rooms ("play with a friend") ---- */
+const VARIANTS = new Set(['classic', 'tagbomb']);
+const pickVariant = (v) => (VARIANTS.has(v) ? v : 'classic');
+
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';   // no O/0/I/1
 const ROOM_TTL_MS = 15 * 60 * 1000;
 
@@ -412,8 +415,9 @@ function pair(a, b, reason) {
   a.room = roomId; a.peer = b.id; a.queued = false;
   b.room = roomId; b.peer = a.id; b.queued = false;
   rooms.set(roomId, { a: a.id, b: b.id, started: Date.now() });
-  send(a, { t: 'match', room: roomId, seed, idx: aHost ? 0 : 1, host: aHost, opp: b.profile, v: 1 });
-  send(b, { t: 'match', room: roomId, seed, idx: aHost ? 1 : 0, host: !aHost, opp: a.profile, v: 1 });
+  const variant = a.variant || b.variant || 'classic';
+  send(a, { t: 'match', room: roomId, seed, idx: aHost ? 0 : 1, host: aHost, opp: b.profile, variant, v: 1 });
+  send(b, { t: 'match', room: roomId, seed, idx: aHost ? 1 : 0, host: !aHost, opp: a.profile, variant, v: 1 });
   log(`match ${roomId} (${reason}): ${a.profile.name} vs ${b.profile.name}`);
 }
 
@@ -421,17 +425,26 @@ function dropPrivateRoom(id) {
   for (const [code, r] of privateRooms) if (r.hostId === id) privateRooms.delete(code);
 }
 
+/** Only ever pair two people who chose the same mode. */
 function tryMatch() {
-  while (queue.length >= 2) {
-    const aId = queue.shift();
-    const bId = queue.shift();
-    const a = clients.get(aId);
-    const b = clients.get(bId);
-    if (!a || !a.conn.open) { if (b) queue.unshift(bId); continue; }
-    if (!b || !b.conn.open) { queue.unshift(aId); continue; }
-
-    // whoever has the steadier connection would be nicer; a coin-flip is fair enough
-    pair(a, b, 'public');
+  let paired = true;
+  while (paired) {
+    paired = false;
+    for (let i = 0; i < queue.length; i++) {
+      const a = clients.get(queue[i]);
+      if (!a || !a.conn.open) { queue.splice(i, 1); i--; continue; }
+      for (let j = i + 1; j < queue.length; j++) {
+        const b = clients.get(queue[j]);
+        if (!b || !b.conn.open) { queue.splice(j, 1); j--; continue; }
+        if ((a.variant || 'classic') !== (b.variant || 'classic')) continue;
+        queue.splice(j, 1);
+        queue.splice(i, 1);
+        pair(a, b, 'public ' + (a.variant || 'classic'));
+        paired = true;
+        break;
+      }
+      if (paired) break;
+    }
   }
   // keep everyone still waiting informed
   queue.forEach((id, i) => send(clients.get(id), { t: 'queued', n: i + 1 }));
@@ -468,7 +481,7 @@ attach(server, '/ws', (conn) => {
   }
   const id = nextId++;
   const c = {
-    id, conn, room: null, peer: null, queued: false,
+    id, conn, room: null, peer: null, queued: false, variant: 'classic',
     profile: sanitizeProfile(null),
     msgs: 0, window: Date.now(), last: Date.now(),
   };
@@ -492,6 +505,7 @@ attach(server, '/ws', (conn) => {
         c.profile = sanitizeProfile(m.profile);
         break;
       case 'queue':
+        c.variant = pickVariant(m.variant);
         if (c.room) leaveRoom(c);
         if (!c.queued) { c.queued = true; queue.push(id); }
         send(c, { t: 'queued', n: queue.indexOf(id) + 1 });
@@ -507,9 +521,10 @@ attach(server, '/ws', (conn) => {
         if (c.room) leaveRoom(c);
         dequeue(id); c.queued = false;
         dropPrivateRoom(id);
+        c.variant = pickVariant(m.variant);
         const code = makeCode();
         if (!code) { send(c, { t: 'err', m: 'could not create a room' }); break; }
-        privateRooms.set(code, { hostId: id, created: Date.now() });
+        privateRooms.set(code, { hostId: id, created: Date.now(), variant: c.variant });
         send(c, { t: 'room', code });
         log(`room ${code} opened by ${c.profile.name}`);
         break;
@@ -529,6 +544,7 @@ attach(server, '/ws', (conn) => {
         privateRooms.delete(code);
         if (c.room) leaveRoom(c);
         dequeue(id); c.queued = false;
+        c.variant = room.variant || 'classic';   // the host picked the mode
         pair(hostC, c, 'friends ' + code);
         break;
       }

@@ -12,7 +12,7 @@
    ============================================================ */
 
 import { Emitter, clamp } from '../core/util.js';
-import { DT, CFG, createSim, stepSim, encodeState, decodeState, statsFor, variantForSeed } from './sim.js';
+import { DT, CFG, createSim, stepSim, encodeState, decodeState, statsFor } from './sim.js';
 import { M, S, P, packInput, unpackInput, validPeerMsg } from '../net/protocol.js';
 import { BotAI } from '../net/bot.js';
 import { matchBrainrot } from '../data/brainrots.js';
@@ -37,9 +37,10 @@ class BaseSession extends Emitter {
     this.mode = o.mode || 'online';
     this.readInput = o.readInput || (() => IDLE_INPUT);
     this.brainrot = matchBrainrot(this.seed);
-    // Online both sides derive the variant from the shared seed, so it needs
-    // no wire field; practice can be told explicitly.
-    this.variant = o.variant || variantForSeed(this.seed);
+    // The relay is authoritative about the mode for online play, and practice
+    // passes it straight in. Never guess it here: a guess that disagreed with
+    // the relay would desync the two clients on the rules themselves.
+    this.variant = o.variant || 'classic';
     this.sim = createSim(this.seed, { brainrotId: this.brainrot.id, variant: this.variant });
     this.fx = [];
     this.acc = 0;

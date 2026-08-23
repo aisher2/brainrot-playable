@@ -118,11 +118,14 @@ export class Matchmaker extends Emitter {
     if (this.cancelled) { t.close(); throw new CancelError(); }
 
     t.send({ t: M.HELLO, v: PROTOCOL_VERSION, profile: opts.profile });
+    // The relay queues each mode separately, so you only ever meet someone
+    // who picked the same one.
+    const variant = opts.variant || 'classic';
     if (opts.mode === 'friend') {
       if (opts.code) t.send({ t: M.JOIN_ROOM, code: opts.code });
-      else t.send({ t: M.MAKE_ROOM });
+      else t.send({ t: M.MAKE_ROOM, variant });
     } else {
-      t.send({ t: M.QUEUE });
+      t.send({ t: M.QUEUE, variant });
     }
     this._set(NET_STATUS.SEARCHING);
 
@@ -147,6 +150,7 @@ export class Matchmaker extends Emitter {
             seed: (m.seed >>> 0) || 1,
             opp: m.opp || { name: 'OPPONENT', level: 1, loadout: null },
             mode: 'online',
+            variant: m.variant || 'classic',
             room: m.room,
             viaCode: !!(opts.mode === 'friend'),
           };

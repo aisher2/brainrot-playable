@@ -62,16 +62,17 @@ export const CFG = {
   LONGEST_HOLD_BONUS: 20,
   STEAL_WINDOW: 8,           // seconds after a drop that a pickup counts as a steal
 
-  /* HOT POTATO. The brainrot is armed the moment you touch it: hold it too
-     long and it goes off in your hands. Holding earns nothing here - you
-     score by getting rid of it, and by being the one not holding it. */
-  FUSE_START: 6.5,           // fuse length at the top of the round
-  FUSE_MIN: 3.0,             // ...and at the very end
-  FUSE_RAMP: 0.06,           // seconds shaved off per second elapsed
+  /* TAG BOMB. One bomb, one continuous fuse, and the only way to get rid of
+     it is to physically catch the other player. Whoever is holding it when
+     the fuse runs out loses the round outright - there is no score to fall
+     back on, which is what makes the last seconds worth playing. */
+  BOMB_MIN: 15,              // fuse is rolled per round, so no two feel alike
+  BOMB_MAX: 25,
+  TAG_R: 1.9,                // how close the holder must get to pass it on
+  TAG_COOLDOWN: 0.5,         // stops the bomb ping-ponging on one collision
+  TAG_PUSH: 9,               // shove them apart so the next tag has to be earned
   BLAST_STUN: 1.5,
   BLAST_PUSH: 16,
-  BLAST_POINTS: 18,          // to whoever was NOT holding it
-  PASS_POINTS: 3,            // for successfully offloading it
 
   EVENT_MIN: 10,
   EVENT_MAX: 15,
@@ -142,25 +143,31 @@ const EVENT_IDS = ['FRENZY', 'SPEED', 'TELEPORT', 'FREEZE', 'MEGA', 'GOLDEN'];
  */
 /**
  * Round variants. `classic` is the original: hold the brainrot to score.
- * `potato` inverts it - the thing is a bomb and holding is the danger.
+ * `tagbomb` inverts it - the thing is a bomb, holding is the danger, and the
+ * only way to pass it is to catch the other player.
  *
- * Which one an online match plays is derived from the shared seed, exactly
- * like the map, so both clients agree without another wire field.
+ * The relay decides which one an online match plays and tells both clients,
+ * so two people only ever meet someone who picked the same mode.
  */
-export const VARIANTS = ['classic', 'potato'];
+export const VARIANTS = ['classic', 'tagbomb'];
 
-export function variantForSeed(seed) {
-  let h = (seed >>> 0) ^ 0x1b873593;
-  h = Math.imul(h ^ (h >>> 16), 0x7feb352d);
-  h = Math.imul(h ^ (h >>> 15), 0x846ca68b);
-  h = (h ^ (h >>> 16)) >>> 0;
-  return VARIANTS[h % VARIANTS.length];
+
+/**
+ * TAG BOMB rolls its round length from the seed, so both clients agree on it
+ * without another wire field and no two rounds feel identical.
+ */
+export function bombSeconds(seed) {
+  let h = (seed >>> 0) ^ 0x27d4eb2f;
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+  h = (h ^ (h >>> 13)) >>> 0;
+  return CFG.BOMB_MIN + (h % 1000) / 1000 * (CFG.BOMB_MAX - CFG.BOMB_MIN);
 }
 
-/** How long the fuse is right now - it tightens as the round runs down. */
-export function fuseLength(s) {
-  const elapsed = CFG.ROUND_TIME - s.timeLeft;
-  return Math.max(CFG.FUSE_MIN, CFG.FUSE_START - elapsed * CFG.FUSE_RAMP);
+/** Which player starts holding it. Also seed-derived, so it is agreed. */
+export function firstHolder(seed) {
+  let h = (seed >>> 0) ^ 0x165667b1;
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  return ((h ^ (h >>> 16)) >>> 0) & 1;
 }
 
 export const ABILITIES = [
@@ -189,6 +196,7 @@ function newPlayer(i) {
     lockT: 0,                 // cannot pick the brainrot up while > 0
     cd0: 0, cd1: 0, cd2: 0,   // ability cooldowns, seconds remaining
     ch0: 0, ch1: 0, ch2: 0,   // banked ability charges, earned from orbs
+    tags: 0,                  // TAG BOMB: successful passes made
     kickT: 0,                 // kick wind-up / follow-through
     ultT: 0,                  // magnet is pulling
     slipT: 0,                 // face-down on a banana
@@ -220,6 +228,7 @@ export function createSim(seed = 1, opts = {}) {
     },
     decoys: [],
     variant: VARIANTS.includes(opts.variant) ? opts.variant : 'classic',
+    tagCd: 0,                 // brief lock after a tag so it cannot bounce back
     bananas: [],
     orbs: [],
     orbTimer: CFG.ORB_FIRST,
@@ -233,6 +242,15 @@ export function createSim(seed = 1, opts = {}) {
     lastEvent: '',
     brainrotId: opts.brainrotId || 'banana',
   };
+  /* TAG BOMB starts armed: someone is already holding it when GO lands, and
+     the round IS the fuse. */
+  if (s.variant === 'tagbomb') {
+    s.timeLeft = bombSeconds(seed);
+    const who = firstHolder(seed);
+    s.br.owner = who;
+    s.br.fuse = s.timeLeft;
+  }
+
   return s;
 }
 
@@ -288,7 +306,7 @@ export function stepSim(s, inputs, fx = null) {
   stepUltimates(s, fx);
   stepBrainrot(s, fx);
   stepPickups(s, fx);
-  stepFuse(s, fx);
+  stepTagBomb(s, fx);
   stepScoring(s, fx);
 
   if (s.timeLeft <= 0) endRound(s, fx);
@@ -510,7 +528,7 @@ function stepKicks(s, fx) {
     b.anim = 1; b.animT = CFG.KICK_STUN;
     b.bonked++;
     a.abilityHits++;
-    a.score += CFG.KICK_BONUS;
+    if (s.variant !== 'tagbomb') a.score += CFG.KICK_BONUS;
 
     const hadBrainrot = s.br.owner === 1 - i;
     if (hadBrainrot) dropBrainrot(s, nx, nz, fx, true);
@@ -573,7 +591,7 @@ function stepBananas(s, fx) {
       p.onGround = false;
       const thrower = s.players[b.owner];
       thrower.abilityHits++;
-      thrower.score += CFG.SLIP_BONUS;
+      if (s.variant !== 'tagbomb') thrower.score += CFG.SLIP_BONUS;
       const hadBrainrot = s.br.owner === i;
       if (hadBrainrot) dropBrainrot(s, p.vx / 14, p.vz / 14, fx, true);
       if (fx) fx.push({ t: 'slip', p: b.owner, v: i, x: p.x, y: p.y, z: p.z, stole: hadBrainrot });
@@ -694,7 +712,7 @@ function stepDashHits(s, fx) {
     a.dashT = 0;
     a.vx *= 0.25; a.vz *= 0.25;
     a.dashHits++;
-    a.score += CFG.DASH_HIT_BONUS;
+    if (s.variant !== 'tagbomb') a.score += CFG.DASH_HIT_BONUS;
 
     const hadBrainrot = s.br.owner === 1 - i;
     if (hadBrainrot) dropBrainrot(s, nx, nz, fx, true);
@@ -775,6 +793,10 @@ function dropBrainrot(s, nx, nz, fx, popped) {
   const br = s.br;
   const old = br.owner;
   if (old < 0) return;
+  /* TAG BOMB: the bomb is strapped on. Abilities knock you about but they
+     must never shake it loose - a kick that removed the bomb would be an
+     instant win, and the pass has to be earned with a tag. */
+  if (s.variant === 'tagbomb') return;
   const p = s.players[old];
   br.owner = -1;
   br.lastOwner = old;
@@ -799,6 +821,8 @@ function dropBrainrot(s, nx, nz, fx, popped) {
 
 function stepPickups(s, fx) {
   const br = s.br;
+  // in TAG BOMB the bomb is never loose, so there is nothing to pick up
+  if (s.variant === 'tagbomb') return;
   if (br.owner >= 0 || br.lock > 0) return;
   for (let i = 0; i < 2; i++) {
     const p = s.players[i];
@@ -811,14 +835,6 @@ function stepPickups(s, fx) {
     br.owner = i;
     p.pickups++;
     p.curHold = 0;
-    // a fresh fuse for the new holder, shorter the later it gets
-    if (s.variant === 'potato') {
-      br.fuse = fuseLength(s);
-      // whoever just offloaded it gets paid for the pass
-      if (br.lastOwner === 1 - i && br.sinceDrop < CFG.STEAL_WINDOW) {
-        s.players[1 - i].score += CFG.PASS_POINTS;
-      }
-    }
     const wasSteal = br.lastOwner === 1 - i && br.sinceDrop < CFG.STEAL_WINDOW;
     if (wasSteal) {
       p.steals++;
@@ -845,37 +861,46 @@ function stepPickups(s, fx) {
   }
 }
 
-/* ---------------- HOT POTATO ---------------- */
-function stepFuse(s, fx) {
-  if (s.variant !== 'potato') return;
+/* ---------------- TAG BOMB ----------------
+   The bomb never sits on the floor: it is always on somebody, and the only
+   way to move it is to catch the other player. The fuse does NOT reset on a
+   tag - it is one continuous countdown for the whole round, which is what
+   turns the last five seconds into a scramble. */
+function stepTagBomb(s, fx) {
+  if (s.variant !== 'tagbomb') return;
   const br = s.br;
-  if (br.owner < 0) { br.fuse = fuseLength(s); return; }
+  s.tagCd = Math.max(0, s.tagCd - DT);
+  br.fuse = s.timeLeft;                 // the round timer IS the fuse
 
-  br.fuse -= DT;
-  if (br.fuse > 0) return;
-
-  /* BOOM. The holder eats it; the other player banks the points. */
   const i = br.owner;
-  const p = s.players[i];
-  const other = s.players[1 - i];
+  if (i < 0) return;
+  const holder = s.players[i];
+  const prey = s.players[1 - i];
 
-  const bx = p.x, by = p.y, bz = p.z;
-  R(s);
-  const ang = rng.angle();
-  saveR(s);
-  dropBrainrot(s, Math.cos(ang), Math.sin(ang), null, true);
-  br.fuse = fuseLength(s);
+  // a holder who cannot act cannot tag
+  if (s.tagCd > 0 || holder.stunT > 0 || holder.freezeT > 0 || holder.slipT > 0) return;
 
-  p.stunT = Math.max(p.stunT, CFG.BLAST_STUN);
-  p.vx += Math.cos(ang) * CFG.BLAST_PUSH;
-  p.vz += Math.sin(ang) * CFG.BLAST_PUSH;
-  p.vy = Math.max(p.vy, 9);
-  p.onGround = false;
-  p.bonked++;
-  p.anim = 4; p.animT = 0.5;
-  other.score += CFG.BLAST_POINTS;
+  const dx = prey.x - holder.x, dz = prey.z - holder.z;
+  const d2 = dx * dx + dz * dz;
+  if (d2 > CFG.TAG_R * CFG.TAG_R) return;
+  if (Math.abs(prey.y - holder.y) > 2.2) return;
 
-  if (fx) fx.push({ t: 'blast', p: i, x: bx, y: by, z: bz });
+  /* TAG. Hand it over, shove them apart so the next one has to be earned,
+     and lock it briefly so a single collision cannot bounce it back. */
+  br.owner = 1 - i;
+  br.lastOwner = i;
+  br.sinceDrop = 0;
+  s.tagCd = CFG.TAG_COOLDOWN;
+  holder.tags++;
+  prey.lockT = Math.max(prey.lockT, CFG.TAG_COOLDOWN);
+
+  const d = Math.sqrt(d2) || 1;
+  const nx = dx / d, nz = dz / d;
+  prey.vx += nx * CFG.TAG_PUSH; prey.vz += nz * CFG.TAG_PUSH;
+  holder.vx -= nx * CFG.TAG_PUSH * 0.6; holder.vz -= nz * CFG.TAG_PUSH * 0.6;
+  prey.anim = 4; prey.animT = 0.3;
+
+  if (fx) fx.push({ t: 'tag', p: i, to: 1 - i, x: prey.x, y: prey.y, z: prey.z });
 }
 
 function stepScoring(s, fx) {
@@ -893,8 +918,8 @@ function stepScoring(s, fx) {
   p.curHold += DT;
   p.longestHold = Math.max(p.longestHold, p.curHold);
   if (br.golden > 0) p.goldenTime += DT;
-  // Hot potato pays nothing for holding - that is the whole point of it.
-  if (s.variant === 'potato') return;
+  // TAG BOMB has no score at all - the round is won by not holding the bomb.
+  if (s.variant === 'tagbomb') return;
   p.acc += CFG.SCORE_RATE * mult * DT;
   while (p.acc >= 1) {
     p.acc -= 1;
@@ -1018,6 +1043,22 @@ function endRound(s, fx) {
   s.phaseT = CFG.OVER_HOLD;
   s.timeLeft = 0;
 
+  if (s.variant === 'tagbomb') {
+    /* Whoever is holding it when the fuse runs out loses, full stop. There is
+       no score in this mode, so this has to run before any bonus below. */
+    const loser = s.br.owner;
+    s.winner = loser < 0 ? -1 : 1 - loser;
+    s.longestBonus = -1;
+    if (loser >= 0) {
+      const p = s.players[loser];
+      p.bonked++;
+      p.stunT = Math.max(p.stunT, CFG.BLAST_STUN);
+      if (fx) fx.push({ t: 'blast', p: loser, x: p.x, y: p.y, z: p.z });
+    }
+    if (fx) fx.push({ t: 'end', winner: s.winner, bonusTo: -1 });
+    return;
+  }
+
   for (const p of s.players) p.longestHold = Math.max(p.longestHold, p.curHold);
 
   const a = s.players[0], b = s.players[1];
@@ -1040,14 +1081,14 @@ const PF = [
   'stunT','freezeT','speedT','slowT','tauntT','lockT','score','acc',
   'holdTime','curHold','longestHold','goldenTime','steals','dashHits',
   'pickups','bonked','lastSecondSteal','maxDeficit','anim','animT',
-  'cd0','cd1','cd2','ch0','ch1','ch2','kickT','ultT','slipT','abilityHits',
+  'cd0','cd1','cd2','ch0','ch1','ch2','kickT','ultT','slipT','abilityHits','tags',
 ];
 const BF = ['x','y','z','vx','vy','vz','owner','lastOwner','sinceDrop','lock','golden','spin','fuse'];
 
 export function encodeState(s) {
   const out = [s.tick, s.t, PHASES.indexOf(s.phase), s.phaseT, s.timeLeft, s.rs,
     s.evTimer, s.hazTimer, s.eventsSeen, s.winner, s.longestBonus == null ? -1 : s.longestBonus,
-    round4(s.orbTimer), VARIANTS.indexOf(s.variant)];
+    round4(s.orbTimer), VARIANTS.indexOf(s.variant), round4(s.tagCd)];
   for (let i = 0; i < 2; i++) {
     const p = s.players[i];
     for (const k of PF) out.push(round4(p[k]));
@@ -1080,6 +1121,7 @@ export function decodeState(a, into) {
   s.eventsSeen = a[k++]; s.winner = a[k++]; s.longestBonus = a[k++];
   s.orbTimer = a[k++];
   s.variant = VARIANTS[a[k++]] || 'classic';
+  s.tagCd = a[k++];
   for (let i = 0; i < 2; i++) {
     const p = s.players[i];
     for (const f of PF) p[f] = a[k++];

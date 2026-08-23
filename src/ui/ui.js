@@ -307,12 +307,26 @@ export class UI extends Emitter {
     }
   }
 
-  /** highlight whichever round variant practice will use */
+  /** highlight the chosen mode and say in one line what it is */
   _refreshMode() {
     const want = getSetting('variant') || 'classic';
     for (const b of document.querySelectorAll('#modePick button')) {
       b.classList.toggle('on', b.dataset.v === want);
     }
+    const blurb = $('modeBlurb');
+    if (blurb) {
+      blurb.textContent = want === 'tagbomb'
+        ? '2 PLAYERS \u00b7 CHASE \u00b7 TAG \u00b7 SURVIVE'
+        : 'HOLD THE BRAINROT THE LONGEST';
+    }
+  }
+
+  /** TAG BOMB reads its countdown as a fuse, not a round clock. */
+  setBombMode(on) {
+    const t = $('timerBox');
+    if (t) t.classList.toggle('bomb', !!on);
+    const lab = t?.querySelector('small');
+    if (lab) lab.textContent = on ? '\uD83D\uDCA3 FUSE' : 'TIME';
   }
 
   setNetStatus(kind, text) {
@@ -492,8 +506,10 @@ export class UI extends Emitter {
   setMapName(name, variant) {
     const e = $('mapChip');
     if (!e) return;
-    e.textContent = variant === 'potato' ? `HOT POTATO \u00b7 ${name}` : (name || '');
-    e.classList.toggle('potato', variant === 'potato');
+    e.textContent = variant === 'tagbomb'
+      ? `\uD83D\uDCA3 TAG BOMB \u00b7 ${name}`
+      : (name || '');
+    e.classList.toggle('potato', variant === 'tagbomb');
     e.classList.remove('on');
     void e.offsetWidth;                 // restart the animation
     if (name) e.classList.add('on');

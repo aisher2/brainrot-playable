@@ -89,6 +89,35 @@ export class BotAI {
     const toFoe = Math.hypot(foe.x - me.x, foe.z - me.z);
     this._abilities(s, me, foe, br, toFoe);
 
+    /* TAG BOMB inverts the chase. In classic the holder is carrying a prize
+       and runs; here the holder is carrying a bomb and has to catch you to
+       get rid of it. Same two behaviours, swapped. */
+    if (s.variant === 'tagbomb') {
+      const holding = br.owner === this.idx;
+      if (holding) {
+        // close the distance and stay on them
+        const lead = clamp(toFoe * 0.16, 0, 1.4) * this.d.aim;
+        this.tx = foe.x + foe.vx * lead;
+        this.tz = foe.z + foe.vz * lead;
+        if (toFoe < this.d.dashRange && me.dashCd <= 0
+            && Math.abs(foe.y - me.y) < 1.8 && this.rng.chance(this.d.dashChance)) {
+          this.dashWant = true;
+        }
+      } else {
+        // get away, and do not corner yourself doing it
+        const ax = me.x - foe.x, az = me.z - foe.z;
+        const l = Math.hypot(ax, az) || 1;
+        let tx = me.x + (ax / l) * 12, tz = me.z + (az / l) * 12;
+        if (Math.hypot(tx, tz) > A.HALF - 4) {
+          const tang = Math.atan2(me.z, me.x) + (this.rng.chance(0.5) ? 1 : -1) * 0.9;
+          tx = Math.cos(tang) * (A.HALF - 7); tz = Math.sin(tang) * (A.HALF - 7);
+        }
+        this.tx = tx; this.tz = tz;
+        if (toFoe < 3.4 && me.dashCd <= 0 && this.rng.chance(this.d.dashChance)) this.dashWant = true;
+      }
+      return;
+    }
+
     if (br.owner === this.idx) {
       /* --- running away with the prize --- */
       const ax = me.x - foe.x, az = me.z - foe.z;

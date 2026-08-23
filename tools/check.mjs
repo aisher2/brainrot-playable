@@ -274,55 +274,57 @@ try {
     console.log('  ws    handshake matches the RFC 6455 published vector (server and client)');
   }
 
-  /* HOT POTATO: holding has to be the dangerous thing, not the rewarding one */
+  /* TAG BOMB: one bomb, one fuse, and the holder when it blows loses */
   {
-    const { VARIANTS, variantForSeed, fuseLength } = await import(
+    const { bombSeconds, firstHolder } = await import(
       pathToFileURL(path.join(SRC, 'game/sim.js')).href);
 
-    // both clients must land on the same variant from the same seed
-    let disagreed = 0;
-    const spread = {};
+    // the fuse and the first holder come from the shared seed, so both
+    // clients must compute them identically and stay inside the stated range
+    let bad = 0;
     for (let i = 0; i < 20000; i++) {
       const seed = (Math.random() * 0xffffffff) >>> 0;
-      const v = variantForSeed(seed);
-      if (v !== variantForSeed(seed)) disagreed++;
-      spread[v] = (spread[v] || 0) + 1;
+      if (bombSeconds(seed) !== bombSeconds(seed)) bad++;
+      if (firstHolder(seed) !== firstHolder(seed)) bad++;
+      const secs = bombSeconds(seed);
+      if (secs < CFG.BOMB_MIN || secs > CFG.BOMB_MAX) throw new Error('fuse ' + secs + 's is outside 15-25');
     }
-    if (disagreed) throw new Error('variantForSeed is not deterministic');
-    for (const v of VARIANTS) {
-      const pct = (spread[v] || 0) / 200;
-      if (pct < 35 || pct > 65) throw new Error(`variant ${v} shows up ${pct.toFixed(1)}% of the time`);
-    }
+    if (bad) throw new Error('tag bomb setup is not deterministic across clients');
 
-    // classic still pays for holding
+    // classic is untouched
     const classic = createSim(4242, { brainrotId: 'banana', variant: 'classic' });
     while (classic.phase === 'countdown') stepSim(classic, [idle, idle], null);
     classic.br.owner = 0;
     for (let i = 0; i < 120; i++) stepSim(classic, [idle, idle], null);
     if (classic.players[0].score <= 0) throw new Error('classic stopped paying for holding');
 
-    // potato pays nothing for holding, and goes off
-    const pot = createSim(4242, { brainrotId: 'banana', variant: 'potato' });
-    while (pot.phase === 'countdown') stepSim(pot, [idle, idle], null);
-    pot.br.owner = 0;
-    pot.br.fuse = fuseLength(pot);
+    // a full tag bomb round, holder chasing and prey fleeing
+    const tb = createSim(777, { brainrotId: 'banana', variant: 'tagbomb' });
+    if (tb.br.owner < 0) throw new Error('tag bomb did not start armed');
+    while (tb.phase === 'countdown') stepSim(tb, [idle, idle], null);
     const fx = [];
-    const before = pot.players[1].score;
-    for (let i = 0; i < Math.ceil(12 / DT); i++) stepSim(pot, [idle, idle], fx);
+    for (let i = 0; i < Math.ceil(40 / DT) && tb.phase === 'play'; i++) {
+      const h = tb.br.owner, hold = tb.players[h], prey = tb.players[1 - h];
+      const dx = prey.x - hold.x, dz = prey.z - hold.z, d = Math.hypot(dx, dz) || 1;
+      const inp = [{ x: 0, z: 0 }, { x: 0, z: 0 }];
+      inp[h] = { x: dx / d, z: dz / d, a0: i % 120 === 0, a1: i % 200 === 0 };
+      inp[1 - h] = { x: -dx / d * 0.85, z: -dz / d * 0.85, dash: i % 150 === 0 };
+      stepSim(tb, inp, fx);
+      if (tb.br.owner < 0) throw new Error('an ability knocked the bomb loose - it must never drop');
+    }
 
-    if (pot.players[0].score > 0) throw new Error('hot potato paid the holder for holding');
-    if (!fx.some((f) => f.t === 'blast')) throw new Error('the fuse never went off');
-    if (pot.players[1].score <= before) throw new Error('the blast paid nobody');
-    if (pot.br.owner === 0) throw new Error('the holder kept it through the explosion');
+    const tags = fx.filter((f) => f.t === 'tag').length;
+    if (tags < 2) throw new Error('tagging never happened (' + tags + ')');
+    if (tb.phase !== 'over') throw new Error('the round never ended');
+    if (tb.winner !== 1 - tb.br.owner) throw new Error('the holder did not lose');
+    if (!fx.some((f) => f.t === 'blast')) throw new Error('no explosion at the end');
+    if (tb.players[0].score || tb.players[1].score) {
+      throw new Error(`tag bomb awarded score (${tb.players[0].score}/${tb.players[1].score}) - it is win or lose only`);
+    }
+    if (tb.players[0].tags + tb.players[1].tags !== tags) throw new Error('tag counters disagree with the effects');
 
-    // the fuse tightens as the round runs down
-    const early = fuseLength({ timeLeft: CFG.ROUND_TIME });
-    const late = fuseLength({ timeLeft: 0 });
-    if (!(late < early)) throw new Error('the fuse does not shorten over the round');
-    if (late < CFG.FUSE_MIN - 1e-9) throw new Error('the fuse went below FUSE_MIN');
-
-    console.log(`  mode  hot potato: holding pays 0, fuse ${early.toFixed(1)}s -> ${late.toFixed(1)}s, `
-      + 'blast pays the other player; variant agrees across clients');
+    console.log(`  mode  tag bomb: ${tags} tags over a ${bombSeconds(777).toFixed(1)}s fuse, `
+      + 'bomb never dropped, holder loses, no score awarded');
   }
 
   // the wire has to carry ability state and live bananas

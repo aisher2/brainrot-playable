@@ -409,6 +409,7 @@ async function startMatch(mode, opts = {}) {
     info = await app.mm.find({
       mode,
       code: opts.code,
+      variant: opts.variant || getSetting('variant') || 'classic',
       serverUrl: relayUrl(getSetting('serverUrl')),
       profile: publicProfile(),
       difficulty: pickDifficulty(),
@@ -449,8 +450,9 @@ async function startMatch(mode, opts = {}) {
     if (app.stealTap) { inp.dash = true; app.stealTap = false; }
     return inp;
   };
-  // practice plays whatever the menu says; online derives it from the seed
-  if (opts.variant) info.variant = opts.variant;
+  // practice plays whatever the menu says; online is told by the relay, which
+  // only ever pairs two people who chose the same mode
+  if (!info.variant) info.variant = opts.variant || getSetting('variant') || 'classic';
 
   const { session, bot } = createSession(info, readInput);
   app.session = session;
@@ -468,6 +470,8 @@ async function startMatch(mode, opts = {}) {
   const brDef = matchBrainrot(info.seed);
   app.view.setMatch({ localIdx: info.idx, loadouts, names, brainrotId: brDef.id });
   ui.setMapName(app.map.name, session.variant);
+  ui.setBombMode(session.variant === 'tagbomb');
+  app.lastTick = -1;
   ui.setMatchNames(names[0], names[1]);
   ui.setScores(0, 0);
   ui.setHolder(-1);
@@ -686,6 +690,19 @@ function syncHud(sim) {
   ui.setScores(sim.players[0].score, sim.players[1].score);
   ui.setTime(sim.timeLeft);
   ui.setHolder(sim.br.owner, sim.br.golden > 0);
+
+  /* TAG BOMB: count the last five seconds out loud. The holder is the one
+     who needs the panic, so the message is addressed to them. */
+  if (sim.variant === 'tagbomb' && sim.phase === 'play') {
+    const secs = Math.ceil(sim.timeLeft);
+    if (secs !== app.lastTick && secs <= 5 && secs >= 1) {
+      app.lastTick = secs;
+      const mine = sim.br.owner === app.localIdx;
+      ui.bigMsg(secs === 1 ? (mine ? 'RUN!!!' : '1!') : `\uD83D\uDCA3 ${secs}!`);
+      sfx.countdown();
+      if (mine) app.view.hitFlash = Math.max(app.view.hitFlash, 0.35);
+    }
+  }
   ui.setHoldBars(sim.players[0].holdTime, sim.players[1].holdTime);
   const me = sim.players[app.localIdx];
   const foe = sim.players[1 - app.localIdx];
