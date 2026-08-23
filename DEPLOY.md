@@ -13,6 +13,10 @@ are two ways to get one; both end with a real HTTPS domain.
 | Cost | free tier | free |
 | Hosts | Render, Railway, Fly.io, Koyeb | Netlify, Cloudflare Pages, Vercel, GitHub Pages |
 
+> **GitHub Pages is a static host.** It can serve the game but never the
+> relay or the leaderboard — there is no process to run them in. Pair it
+> with a Node host, or use a Node host for both.
+
 **Use the Node host.** `PLAY` matches you against another real person, and that
 needs the matchmaking relay, which is a WebSocket server. A static host cannot
 run one, so on a static host `PLAY` has nothing to queue against and says so;
@@ -72,11 +76,48 @@ external requests of any kind.
 ### Vercel
 1. `npx vercel deploy dist --prod`
 
-### GitHub Pages
-1. Commit `dist/` to a `gh-pages` branch (or set Pages to serve `/dist` on `main`).
-2. Settings → Pages → pick the branch. You get
-   `https://<user>.github.io/<repo>/`.
-3. Sub-path hosting works as-is — every path in the game is relative.
+### GitHub Pages (automated — `.github/workflows/pages.yml` is already here)
+
+**Read this first: GitHub Pages cannot host the server.** Pages serves static
+files. It has no process, so it cannot hold a WebSocket open and cannot answer
+`/api`. On Pages alone you get PRACTICE VS BOT and nothing else — no real 1v1,
+no friend rooms, no world leaderboard.
+
+There is a workflow in the repo that builds and publishes on every push to
+`main`:
+
+1. Push this folder to a GitHub repo.
+2. Settings → Pages → **Source: GitHub Actions**.
+3. Push. You land on `https://<user>.github.io/<repo>/`.
+
+Sub-path hosting works as-is — every path in the game is relative, and the
+workflow drops a `.nojekyll` so `_headers` is not swallowed by Jekyll.
+
+The workflow runs `check.mjs` and `mapcheck.mjs` before it builds, so a broken
+commit never reaches Pages.
+
+#### Getting multiplayer while still using Pages
+
+Host the *game* on Pages and the *server* somewhere that can run Node, then
+point one at the other. Run `server/server.js` on Fly.io (see Option B), then
+set two repository **variables** under
+Settings → Secrets and variables → Actions → Variables:
+
+| Variable | Value |
+| --- | --- |
+| `RELAY_URL` | `wss://your-app.fly.dev/ws` |
+| `LEADERBOARD_URL` | `https://your-app.fly.dev/api` |
+
+Push again and the Pages build bakes those in. `/api` sends
+`access-control-allow-origin: *` and answers preflight, so the cross-origin
+leaderboard works; WebSockets are not subject to CORS at all.
+
+Leave the variables unset and the build honestly reports multiplayer as off
+rather than opening a socket that cannot exist.
+
+> Simpler alternative: skip Pages and let Fly or Render serve the game *and*
+> the relay from the one process (Option B). Same GitHub repo, one deploy,
+> one origin, nothing to wire together.
 
 ### Any other host / your own server
 Upload the contents of `dist/` to any folder that is served over HTTPS. It
