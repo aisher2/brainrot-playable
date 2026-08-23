@@ -26,6 +26,18 @@ class WSConnection extends EventEmitter {
     this.frag = null;
     this.fragOp = 0;
     this.isAlive = true;
+    /* Proxies (Render/Cloudflare) parse the 101 and only then switch the
+       connection into tunnel mode. Frames written in the same tick land in
+       the same TCP segment as the handshake and can be swallowed, so hold
+       anything the app sends until the handshake has flushed on its own. */
+    this._corked = true;
+    this._pending = [];
+    setImmediate(() => {
+      this._corked = false;
+      const q = this._pending;
+      this._pending = [];
+      for (const b of q) { if (this.open) { try { this.socket.write(b); } catch (_) { /* gone */ } } }
+    });
     this.ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
       || socket.remoteAddress || '?';
 
@@ -128,7 +140,9 @@ class WSConnection extends EventEmitter {
       head.writeUInt32BE(len, 6);
     }
     head[0] = 0x80 | op;
-    try { this.socket.write(Buffer.concat([head, payload])); } catch (_) { this.destroy(); }
+    const buf = Buffer.concat([head, payload]);
+    if (this._corked) { this._pending.push(buf); return; }
+    try { this.socket.write(buf); } catch (_) { this.destroy(); }
   }
 
   send(str) { this._frame(OP.TEXT, Buffer.from(String(str), 'utf8')); }
