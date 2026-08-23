@@ -173,11 +173,9 @@ class WSConnection extends EventEmitter {
 function attach(server, path, onConn) {
   server.on('upgrade', (req, socket, head) => {
     const url = (req.url || '/').split('?')[0];
-    if (url !== path) {
-      socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
-      socket.destroy();
-      return;
-    }
+    // Not our path: leave it for any other upgrade handler. Destroying the
+    // socket here would break a second WebSocket endpoint on the same server.
+    if (url !== path) return;
     const key = req.headers['sec-websocket-key'];
     if (req.headers.upgrade?.toLowerCase() !== 'websocket' || !key) {
       socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
