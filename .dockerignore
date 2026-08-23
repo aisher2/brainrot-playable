@@ -1,0 +1,9 @@
+# Never bake a local leaderboard into the image - it would shadow the mounted
+# volume at /data and ship one machine's scores to everyone.
+data/
+data-*/
+dist/
+tools/shots/
+node_modules/
+.git/
+*.log

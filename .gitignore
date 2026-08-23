@@ -1,0 +1,7 @@
+dist/
+tools/shots/
+node_modules/
+*.log
+# leaderboard storage at the repo root only - NOT src/data/, which is game code
+/data/
+/data-*/

@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Steal the Brainrot</title>
+<meta name="description" content="Grab the Brainrot, hold it, get bonked, steal it back. A 60-second 1v1 arena brawl you can play in your browser.">
+<meta name="theme-color" content="#12071f">
+<meta name="color-scheme" content="dark">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Steal the Brainrot">
+<meta name="robots" content="index,follow">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="Steal the Brainrot">
+<meta property="og:description" content="Grab the Brainrot, hold it, get bonked, steal it back. A 60-second 1v1 arena brawl.">
+<meta property="og:image" content="cover.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Steal the Brainrot">
+<meta name="twitter:description" content="Grab the Brainrot, hold it, get bonked, steal it back. A 60-second 1v1 arena brawl.">
+<meta name="twitter:image" content="cover.jpg">
+
+<!-- Original mark. Real files so /favicon.ico never 404s, plus an inline
+     SVG that stays crisp at any density. No third-party assets. -->
+<link rel="icon" href="favicon.ico" sizes="32x32">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23200d38'/%3E%3Cpath d='M20 18c-6 0-10 4-10 9 0 3 1 5 3 7-2 2-3 4-3 7 0 5 4 9 10 9h24c6 0 10-4 10-9 0-3-1-5-3-7 2-2 3-4 3-7 0-5-4-9-10-9z' fill='%23ff3d8b'/%3E%3Cpath d='M32 18v32M20 25c4 2 8 2 12 0M44 25c-4 2-8 2-12 0M20 41c4-2 8-2 12 0M44 41c-4-2-8-2-12 0' stroke='%23a3004a' stroke-width='2.5' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='24' cy='31' r='4.5' fill='%23fff'/%3E%3Ccircle cx='40' cy='31' r='4.5' fill='%23fff'/%3E%3Ccircle cx='25.5' cy='32' r='2.2' fill='%23180827'/%3E%3Ccircle cx='41.5' cy='32' r='2.2' fill='%23180827'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+
+<link rel="stylesheet" href="styles.css">
+
+<!-- ==========================================================
+     DEPLOY-TIME CONFIG - edit this, no rebuild needed.
+
+     relay: 'auto'  DEFAULT. Real 1v1 against other people, over
+                    wss://<this page's host>/ws. Requires the Node server
+                    (server/server.js) to be the thing serving this page -
+                    it is the game host AND the matchmaking relay.
+            'wss://relay.example.com/ws'  relay on a different host
+            ''      no multiplayer. PLAY is disabled and only the
+                    PRACTICE button works. Use this only on a static host
+                    that cannot run the relay.
+     leaderboard: 'auto'  world board via https://<this host>/api  (same server)
+                  ''      local-only board kept in the browser
+     dev:   true    show developer rows in Settings (also via ?dev=1)
+     ========================================================== -->
+<script>window.STB_CONFIG = { relay: "auto", leaderboard: "auto", dev: false };</script>
+</head>
+<body>
+
+<canvas id="gl" aria-label="Game arena"></canvas>
+
+<!-- ============ BOOT / LOADING ============ -->
+<div id="boot" class="screen show">
+  <div class="boot-brain" id="bootBrain">🧠</div>
+  <h1 class="logo boot-logo"><span class="l1">STEAL</span><span class="l2">THE</span><span class="l3">BRAINROT</span></h1>
+  <div class="loadbar"><i id="loadfill"></i></div>
+  <div class="loadrow">
+    <span class="loadtxt" id="loadtxt">waking up the brainrots</span>
+    <b class="bootpct" id="bootPct">0%</b>
+  </div>
+  <div class="boottip" id="bootTip"></div>
+</div>
+
+<!-- ============ UI ROOT ============ -->
+<div id="ui" hidden>
+
+  <!-- ---------- MAIN MENU ---------- -->
+  <section class="screen" id="s-menu">
+    <div class="menu-top">
+      <button class="icon-btn" id="btnMute" title="Mute">🔊</button>
+      <div class="lvlchip" id="lvlChip">
+        <b>LV <span id="lvlNum">1</span></b>
+        <div class="xpbar"><i id="xpFill"></i></div>
+      </div>
+      <button class="icon-btn" id="btnSettings" title="Settings">⚙️</button>
+    </div>
+
+    <h1 class="logo big"><span class="l1">STEAL</span><span class="l2">THE</span><span class="l3">BRAINROT</span></h1>
+    <div class="tagline">grab it &middot; hold it &middot; get bonked &middot; steal it back</div>
+
+    <div class="menu-btns">
+      <button class="btn play" id="btnPlay"><span>PLAY</span><small id="playSub">online &middot; 1v1 &middot; 60s</small></button>
+      <div class="btn-row">
+        <button class="btn small" id="btnBrainrots"><i>🧠</i><span>BRAINROTS</span></button>
+        <button class="btn small" id="btnCustomize"><i>🎩</i><span>CUSTOMIZE</span></button>
+      </div>
+      <div class="btn-row">
+        <button class="btn small" id="btnBoard"><i>🏆</i><span>LEADERBOARD</span></button>
+        <button class="btn small" id="btnQuests"><i>🎯</i><span>QUESTS</span></button>
+      </div>
+      <button class="btn friend" id="btnFriend"><i>🔗</i><span>PLAY WITH A FRIEND</span></button>
+      <button class="btn ghost" id="btnPractice">PRACTICE VS BOT</button>
+    </div>
+
+    <div class="menu-foot">
+      <span id="streakChip" class="chip">🔥 streak 0</span>
+      <span id="netChip" class="chip">offline</span>
+    </div>
+  </section>
+
+
+  <!-- ---------- PLAY WITH A FRIEND ---------- -->
+  <section class="screen dim" id="s-friend">
+    <div class="panel pop friendpanel">
+      <h2>PLAY WITH A FRIEND</h2>
+      <p class="fsub">One of you creates a room, the other types the code.</p>
+
+      <button class="btn play" id="btnMakeRoom"><span>CREATE A ROOM</span><small>you get a 4-letter code</small></button>
+
+      <div class="codebox" id="codeBox" hidden>
+        <small>SHARE THIS CODE</small>
+        <b id="roomCode">----</b>
+        <span id="codeWait">waiting for your friend to join…</span>
+      </div>
+
+      <div class="orline"><i></i><span>OR</span><i></i></div>
+
+      <label class="joinrow">
+        <span>ENTER A CODE</span>
+        <input id="joinCode" maxlength="4" autocomplete="off" autocapitalize="characters"
+               spellcheck="false" placeholder="ABCD" inputmode="text">
+      </label>
+      <button class="btn play" id="btnJoinRoom"><span>JOIN</span></button>
+
+      <div class="ferr" id="friendErr"></div>
+      <button class="btn ghost" id="btnFriendBack">BACK</button>
+    </div>
+  </section>
+
+  <!-- ---------- MATCHMAKING ---------- -->
+  <section class="screen dim" id="s-search">
+    <div class="search-wrap">
+      <div class="radar"><i></i><i></i><i></i></div>
+      <h2 id="searchTitle">SEARCHING FOR OPPONENT...</h2>
+      <div class="vsrow">
+        <div class="vscard me"><div class="av" id="mmMeAv">🙂</div><b id="mmMeName">YOU</b></div>
+        <div class="vs">VS</div>
+        <div class="vscard foe" id="mmFoeCard"><div class="av" id="mmFoeAv">?</div><b id="mmFoeName">...</b></div>
+      </div>
+      <div class="searchsub" id="searchSub">connecting to the brainrot network</div>
+      <button class="soloOffer" id="btnSoloOffer" hidden><span>PRACTISE VS BOT WHILE YOU WAIT</span><small>this is not a real opponent</small></button>
+      <button class="btn ghost" id="btnCancelSearch">CANCEL</button>
+    </div>
+  </section>
+
+  <!-- ---------- IN-MATCH HUD ---------- -->
+  <section class="screen hud" id="s-hud">
+    <div class="hud-top">
+      <div class="score p1" id="scoreP1"><b class="nm">PLAYER 1</b><span class="sc">0</span><i class="hold"></i></div>
+      <div class="timer" id="timerBox"><small>TIME</small><b id="timeNum">60</b></div>
+      <div class="score p2" id="scoreP2"><b class="nm">PLAYER 2</b><span class="sc">0</span><i class="hold"></i></div>
+    </div>
+
+    <div class="holderbar" id="holderBar"><span id="holderTxt">BRAINROT IS LOOSE!</span></div>
+    <div class="mapchip" id="mapChip"></div>
+
+    <div class="toasts" id="toasts"></div>
+    <div class="bigmsg" id="bigMsg"></div>
+    <div class="countdown" id="countdown"></div>
+    <div class="eventbanner" id="eventBanner"></div>
+
+    <!-- ability readouts: shown on every platform, they are the only
+         cooldown feedback a touch player gets -->
+    <div class="abilitybar" id="abilityBar">
+      <button class="abtn" id="btnA0" data-key="Q">
+        <span class="ico">🦵</span><span class="cd"></span><b class="cnt"></b>
+        <b class="lbl">YEET KICK</b><em class="hot">Q</em>
+      </button>
+      <button class="abtn" id="btnA1" data-key="E">
+        <span class="ico">🍌</span><span class="cd"></span><b class="cnt"></b>
+        <b class="lbl">BANANA</b><em class="hot">E</em>
+      </button>
+      <button class="abtn ult" id="btnA2" data-key="R">
+        <span class="ico">👑</span><span class="cd"></span><b class="cnt"></b>
+        <b class="lbl">MAGNET</b><em class="hot">R</em>
+      </button>
+      <button class="abtn dashbtn" id="btnDash" data-key="␣">
+        <span class="ico">💨</span><span class="cd"></span>
+        <b class="lbl">DASH</b><em class="hot">SPACE</em>
+      </button>
+    </div>
+
+    <!-- appears only while a steal is actually possible -->
+    <button class="stealbtn" id="btnSteal" hidden>🧠 STEAL!</button>
+
+    <!-- touch-only movement -->
+    <div class="touch" id="touchLayer" hidden>
+      <div class="stick" id="stick"><i id="stickNub"></i></div>
+      <button class="tbtn taunt" id="btnAbility">TAUNT</button>
+    </div>
+    <button class="hudquit" id="btnQuit">MENU</button>
+  </section>
+
+  <!-- ---------- RESULTS ---------- -->
+  <section class="screen dim" id="s-result">
+    <div class="result-wrap">
+      <div class="crown" id="resultCrown">🏆</div>
+      <h2 class="resulttitle" id="resultTitle">WINNER!</h2>
+      <div class="winner-name" id="winnerName">PLAYER 1</div>
+      <div class="statgrid" id="statGrid"></div>
+      <div class="rewards" id="rewardList"></div>
+      <div class="btn-row wide">
+        <button class="btn play" id="btnAgain"><span>PLAY AGAIN</span></button>
+        <button class="btn small" id="btnHome"><i>🏠</i><span>MAIN MENU</span></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- COLLECTION ---------- -->
+  <section class="screen sheet" id="s-collect">
+    <header class="sheet-head"><button class="icon-btn back">&#8592;</button><h2>BRAINROT COLLECTION</h2><span class="count" id="collectCount">0/0</span></header>
+    <div class="filters" id="rarityFilters"></div>
+    <div class="grid" id="collectGrid"></div>
+  </section>
+
+  <!-- ---------- CUSTOMIZE ---------- -->
+  <section class="screen sheet" id="s-custom">
+    <header class="sheet-head"><button class="icon-btn back">&#8592;</button><h2>CUSTOMIZE</h2><span class="count" id="coinCount">0</span></header>
+    <div class="custom-body">
+      <div class="preview"><canvas id="previewCanvas"></canvas><div class="pv-name" id="pvName">YOU</div></div>
+      <div class="custom-tabs" id="customTabs"></div>
+      <div class="grid small" id="customGrid"></div>
+    </div>
+    <div class="namerow"><label for="nameInput">NAMEPLATE</label><input id="nameInput" maxlength="12" placeholder="YOU"></div>
+  </section>
+
+  <!-- ---------- LEADERBOARD ---------- -->
+  <section class="screen sheet" id="s-board">
+    <header class="sheet-head"><button class="icon-btn back">&#8592;</button><h2>LEADERBOARD</h2><span class="count" id="boardScope">local</span></header>
+    <div class="board" id="boardList"></div>
+  </section>
+
+  <!-- ---------- QUESTS ---------- -->
+  <section class="screen sheet" id="s-quests">
+    <header class="sheet-head"><button class="icon-btn back">&#8592;</button><h2>QUESTS</h2><span class="count" id="questReset">--:--</span></header>
+    <h3 class="sub">DAILY CHALLENGES</h3>
+    <div class="quests" id="dailyList"></div>
+    <h3 class="sub">ACHIEVEMENTS</h3>
+    <div class="quests" id="achList"></div>
+  </section>
+
+  <!-- ---------- SETTINGS ---------- -->
+  <section class="screen sheet" id="s-settings">
+    <header class="sheet-head"><button class="icon-btn back">&#8592;</button><h2>SETTINGS</h2><span class="count" id="fpsChip">-- fps</span></header>
+    <div class="settings" id="settingsList"></div>
+  </section>
+
+</div>
+
+<div id="fx-flash"></div>
+<script type="module" src="src/main.js"></script>
+<noscript><p style="color:#fff;font:700 20px sans-serif;padding:24px">This game needs JavaScript.</p></noscript>
+</body>
+</html>

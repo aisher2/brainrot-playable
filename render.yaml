@@ -1,0 +1,25 @@
+# One-click deploy on Render: https://render.com/deploy
+#
+# Works as-is on the free plan, with one caveat: Render's free filesystem is
+# ephemeral, so the world leaderboard resets on every redeploy. To keep it,
+# upgrade the instance, add a disk mounted at /data, and uncomment both blocks
+# below. (Free plans cannot have disks - adding one while on `plan: free`
+# fails the deploy.) If you want a persistent board for free, use Fly.io
+# instead; see fly.toml and DEPLOY.md.
+services:
+  - type: web
+    name: steal-the-brainrot
+    runtime: node
+    plan: free
+    buildCommand: node tools/build.mjs --relay=auto --leaderboard=auto
+    startCommand: node server/server.js --root dist
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      # - key: DATA_DIR
+      #   value: /data
+    # disk:
+    #   name: brainrot-data
+    #   mountPath: /data
+    #   sizeGB: 1

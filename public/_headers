@@ -1,0 +1,13 @@
+# Netlify / Cloudflare Pages
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=()
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
+/bundle.js
+  Cache-Control: public, max-age=3600
+/styles.css
+  Cache-Control: public, max-age=3600
+/cover.jpg
+  Cache-Control: public, max-age=86400

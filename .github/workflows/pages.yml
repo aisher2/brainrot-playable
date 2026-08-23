@@ -1,0 +1,73 @@
+# Publish the game to GitHub Pages on every push to main.
+#
+# IMPORTANT: Pages serves static files only - it cannot run a WebSocket
+# server. On its own, this deploy gives you PRACTICE VS BOT and nothing else:
+# no real 1v1, no friend rooms, no world leaderboard.
+#
+# To get those, run server/server.js somewhere that can hold a socket open
+# (Fly.io, Render, Railway - see DEPLOY.md) and point this build at it by
+# setting two repository *variables* under
+#   Settings -> Secrets and variables -> Actions -> Variables
+#     RELAY_URL        wss://your-app.fly.dev/ws
+#     LEADERBOARD_URL  https://your-app.fly.dev/api
+# Leave them unset and the build honestly reports multiplayer as off rather
+# than trying a socket that cannot exist.
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deploys race; let a newer push win.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Zero dependencies, so there is nothing to install - go straight to the
+      # checks. A broken build should never reach Pages.
+      - name: Verify
+        run: |
+          node tools/check.mjs
+          node tools/mapcheck.mjs
+
+      - name: Build
+        env:
+          RELAY: ${{ vars.RELAY_URL }}
+          BOARD: ${{ vars.LEADERBOARD_URL }}
+        run: |
+          node tools/build.mjs \
+            --relay="${RELAY:-off}" \
+            --leaderboard="${BOARD:-off}"
+          # Pages runs Jekyll by default, which drops files beginning with _
+          touch dist/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

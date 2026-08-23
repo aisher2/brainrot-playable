@@ -1,0 +1,310 @@
+/* ============================================================
+   check.mjs - import every module in a Node sandbox.
+
+   Catches syntax errors, bad import paths and accidental
+   top-level DOM access before the game ever reaches a browser.
+     node tools/check.mjs
+   ============================================================ */
+
+import { readdirSync, statSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
+import path from 'node:path';
+
+const ROOT = path.resolve(import.meta.dirname, '..');
+const SRC = path.join(ROOT, 'src');
+const SKIP = new Set(['main.js']);      // main.js boots the game on import
+
+/* ---- the thinnest possible DOM so pure-logic modules load ---- */
+const noop = () => {};
+const fakeEl = new Proxy({}, {
+  get(_t, k) {
+    if (k === 'style') return new Proxy({}, { get: () => '', set: () => true });
+    if (k === 'classList') return { add: noop, remove: noop, toggle: noop, contains: () => false };
+    if (k === 'children') return [];
+    if (k === 'appendChild' || k === 'remove' || k === 'addEventListener') return noop;
+    if (k === 'querySelector' || k === 'closest') return () => null;
+    if (k === 'querySelectorAll') return () => [];
+    return undefined;
+  },
+  set: () => true,
+});
+globalThis.window = globalThis;
+globalThis.document = {
+  getElementById: () => null,
+  createElement: () => fakeEl,
+  querySelector: () => null,
+  querySelectorAll: () => [],
+  body: fakeEl,
+  hidden: false,
+  addEventListener: noop,
+};
+globalThis.addEventListener = noop;
+globalThis.removeEventListener = noop;
+globalThis.matchMedia = () => ({ matches: false, addEventListener: noop });
+if (!globalThis.navigator) {
+  Object.defineProperty(globalThis, 'navigator', { value: { userAgent: 'node', hardwareConcurrency: 4 }, configurable: true });
+}
+if (!globalThis.performance) {
+  Object.defineProperty(globalThis, 'performance', { value: { now: () => Date.now() }, configurable: true });
+}
+globalThis.location = { protocol: 'http:', host: 'localhost:8080', search: '' };
+globalThis.localStorage = {
+  _m: new Map(),
+  getItem(k) { return this._m.get(k) ?? null; },
+  setItem(k, v) { this._m.set(k, String(v)); },
+  removeItem(k) { this._m.delete(k); },
+};
+globalThis.WebSocket = class { constructor() { throw new Error('no sockets in check'); } };
+
+function walk(dir, out = []) {
+  for (const name of readdirSync(dir)) {
+    const p = path.join(dir, name);
+    if (statSync(p).isDirectory()) walk(p, out);
+    else if (name.endsWith('.js')) out.push(p);
+  }
+  return out;
+}
+
+const files = walk(SRC).sort();
+let ok = 0, bad = 0;
+
+for (const f of files) {
+  const rel = path.relative(ROOT, f).replace(/\\/g, '/');
+  if (SKIP.has(path.basename(f))) { console.log(`  skip  ${rel}`); continue; }
+  try {
+    await import(pathToFileURL(f).href);
+    console.log(`  ok    ${rel}`);
+    ok++;
+  } catch (e) {
+    console.error(`  FAIL  ${rel}\n        ${e.message}`);
+    bad++;
+  }
+}
+
+/* ---- a headless smoke test of the simulation itself ---- */
+try {
+  const { createSim, stepSim, encodeState, decodeState, statsFor, DT } = await import(
+    pathToFileURL(path.join(SRC, 'game/sim.js')).href);
+
+  const s = createSim(1234, { brainrotId: 'banana' });
+  const fx = [];
+  let inputs = [
+    { x: 0, z: -1, dash: false, taunt: false },
+    { x: 0, z: 1, dash: false, taunt: false },
+  ];
+  const total = Math.ceil((60 + 4.8) / DT);
+  for (let i = 0; i < total; i++) {
+    // random-ish but deterministic pilots so events and pickups actually fire
+    if (i % 37 === 0) {
+      const a = (i * 0.37) % (Math.PI * 2);
+      inputs = [
+        { x: Math.cos(a), z: Math.sin(a), dash: i % 111 === 0, taunt: false },
+        { x: -Math.cos(a * 1.3), z: -Math.sin(a * 1.3), dash: i % 97 === 0, taunt: false },
+      ];
+    }
+    stepSim(s, inputs, fx);
+    for (const p of s.players) {
+      if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) {
+        throw new Error(`player position went non-finite at tick ${i}`);
+      }
+      if (Math.abs(p.x) > 21 || Math.abs(p.z) > 21) {
+        throw new Error(`player escaped the arena at tick ${i}: ${p.x.toFixed(1)},${p.z.toFixed(1)}`);
+      }
+    }
+    if (!Number.isFinite(s.br.x) || Math.abs(s.br.x) > 21) throw new Error('brainrot escaped at tick ' + i);
+  }
+  if (s.phase !== 'over') throw new Error('round did not finish, phase=' + s.phase);
+
+  // encode/decode round trip must be lossless enough to keep simulating
+  const wire = encodeState(s);
+  const back = decodeState(wire, createSim(1234));
+  if (back.tick !== s.tick) throw new Error('decode lost the tick');
+  if (Math.abs(back.players[0].score - s.players[0].score) > 0) throw new Error('decode lost score');
+
+  const st = statsFor(s, 0);
+  console.log(`\n  sim   60s round simulated: ${s.tick} ticks, winner=${s.winner}, ` +
+    `scores ${s.players[0].score}/${s.players[1].score}, events=${s.eventsSeen}`);
+  console.log(`  sim   p1 holds ${st.holdTime.toFixed(1)}s, ${st.steals} steals, ${st.dashHits} hits, ` +
+    `wire=${wire.length} numbers (~${(JSON.stringify(wire).length / 1024).toFixed(1)}kB/snapshot)`);
+  ok++;
+} catch (e) {
+  console.error('  FAIL  simulation smoke test\n        ' + e.message + '\n' + (e.stack || ''));
+  bad++;
+}
+
+/* ---- every ability must fire, land, and survive the wire ---- */
+try {
+  const { createSim, stepSim, encodeState, decodeState, CFG, ABILITIES, DT } = await import(
+    pathToFileURL(path.join(SRC, 'game/sim.js')).href);
+  if (ABILITIES.length !== 3) throw new Error('expected 3 abilities, got ' + ABILITIES.length);
+
+  const idle = { x: 0, z: 0, dash: false, taunt: false, a0: false, a1: false, a2: false };
+  const run = (setup, ticks, drive) => {
+    const s = createSim(4242, { brainrotId: 'banana' });
+    while (s.phase === 'countdown') stepSim(s, [idle, idle], null);
+    // Abilities are pickup-gated now, so hand both players a full rack before
+    // testing what the abilities themselves do.
+    for (const p of s.players) { p.ch0 = CFG.ORB_STACK; p.ch1 = CFG.ORB_STACK; p.ch2 = CFG.ORB_STACK; }
+    setup(s);
+    const fx = [];
+    for (let i = 0; i < ticks; i++) stepSim(s, drive(s, i), fx);
+    return { s, fx };
+  };
+
+  // YEET KICK: stand them nose to nose and kick
+  {
+    const { s, fx } = run((s) => {
+      s.players[0].x = 0; s.players[0].z = 0; s.players[0].face = 0;
+      s.players[1].x = 2.2; s.players[1].z = 0;
+    }, 40, (_s, i) => [i === 0 ? { ...idle, a0: true } : idle, idle]);
+    if (!fx.some((f) => f.t === 'kickHit')) throw new Error('yeet kick never connected');
+    if (s.players[0].ch0 !== CFG.ORB_STACK - 1) throw new Error('kick did not spend a charge');
+    if (s.players[1].stunT <= 0 && s.players[1].bonked === 0) throw new Error('kick did not stun');
+    if (s.players[0].score < CFG.KICK_BONUS) throw new Error('kick paid no bonus');
+  }
+
+  // BANANA: throw one, walk the victim into it
+  {
+    const { s, fx } = run((s) => {
+      s.players[0].x = 0; s.players[0].z = 0; s.players[0].face = 0;
+      s.players[1].x = 14; s.players[1].z = 0;
+    }, 260, (_s, i) => [i === 0 ? { ...idle, a1: true } : idle, { ...idle, x: -1 }]);
+    if (!fx.some((f) => f.t === 'banana')) throw new Error('banana was never thrown');
+    if (!fx.some((f) => f.t === 'slip')) throw new Error('nobody slipped on the banana');
+    if (s.players[0].score < CFG.SLIP_BONUS) throw new Error('slip paid no bonus');
+  }
+
+  // ULTIMATE: rip the brainrot out of the other player's hands
+  {
+    const { s, fx } = run((s) => {
+      s.players[0].x = 0; s.players[0].z = 0;
+      s.players[1].x = 6; s.players[1].z = 0;
+      s.br.owner = 1;
+    }, 90, (_s, i) => [i === 0 ? { ...idle, a2: true } : idle, idle]);
+    if (!fx.some((f) => f.t === 'ultRip')) throw new Error('the magnet did not rip the brainrot free');
+    if (s.br.owner === 1) throw new Error('the opponent still has the brainrot after the ultimate');
+  }
+
+  // both players must be gated identically - no platform advantage
+  {
+    const s = createSim(7, {});
+    while (s.phase === 'countdown') stepSim(s, [idle, idle], null);
+    const press = { ...idle, a0: true, a1: true, a2: true };
+
+    // with nothing collected, pressing everything must do nothing at all
+    stepSim(s, [press, press], null);
+    const a = s.players[0], b = s.players[1];
+    if (a.cd0 > 0 || a.cd1 > 0 || a.cd2 > 0) throw new Error('an ability fired with no charge banked');
+    if (a.kickT > 0 || a.ultT > 0 || s.bananas.length) throw new Error('an ability took effect with no charge');
+
+    // with one each, they spend exactly one and lock identically
+    for (const p of s.players) { p.ch0 = 1; p.ch1 = 1; p.ch2 = 1; }
+    stepSim(s, [press, press], null);
+    if (a.ch0 !== 0 || a.ch1 !== 0 || a.ch2 !== 0) throw new Error('firing did not spend the charge');
+    if (a.ch0 !== b.ch0 || a.ch1 !== b.ch1 || a.ch2 !== b.ch2) throw new Error('charges differ between players');
+    if (a.cd0 !== b.cd0 || a.cd1 !== b.cd1 || a.cd2 !== b.cd2) throw new Error('ability locks differ between players');
+    if (Math.abs(a.cd0 - CFG.ABILITY_LOCK) > DT * 2) throw new Error('ability lock is not ABILITY_LOCK');
+
+    // and an empty slot stays empty however hard you mash it
+    for (let i = 0; i < 120; i++) stepSim(s, [press, press], null);
+    if (a.ch0 !== 0 || s.bananas.length > 2) throw new Error('mashing produced abilities from nothing');
+  }
+
+  // orbs must arrive in mirrored pairs and be collectable into charges
+  {
+    const s = createSim(31337, {});
+    while (s.phase === 'countdown') stepSim(s, [idle, idle], null);
+    const fx = [];
+    for (let i = 0; i < Math.ceil(20 / DT); i++) stepSim(s, [idle, idle], fx);
+    if (!s.orbs.length) throw new Error('no ability orbs ever dropped');
+    if (s.orbs.length % 2 !== 0) throw new Error('orbs did not drop in pairs');
+    for (const o of s.orbs) {
+      const twin = s.orbs.find((q) => Math.abs(q.x + o.x) < 1e-6 && Math.abs(q.z + o.z) < 1e-6
+        && q.kind === o.kind);
+      if (!twin) throw new Error(`orb at (${o.x.toFixed(1)}, ${o.z.toFixed(1)}) has no mirrored twin`);
+    }
+    if (s.orbs.length > CFG.ORB_MAX) throw new Error('more orbs alive than ORB_MAX');
+
+    // walk a player onto one and it becomes a charge
+    const o = s.orbs[0];
+    const p = s.players[0];
+    p.x = o.x; p.z = o.z; p.y = o.y - 0.9;
+    const before = p['ch' + o.kind];
+    stepSim(s, [idle, idle], fx);
+    if (p['ch' + o.kind] !== before + 1) throw new Error('standing on an orb did not grant a charge');
+    if (!fx.some((f) => f.t === 'orbGrab')) throw new Error('no orbGrab effect was emitted');
+
+    // and charges cap rather than growing forever
+    p.ch0 = CFG.ORB_STACK;
+    const cap = s.orbs.find((q) => q.kind === 0);
+    if (cap) {
+      p.x = cap.x; p.z = cap.z; p.y = cap.y - 0.9;
+      stepSim(s, [idle, idle], null);
+      if (p.ch0 > CFG.ORB_STACK) throw new Error('charges exceeded ORB_STACK');
+    }
+  }
+
+  // the wire has to carry ability state and live bananas
+  {
+    const s = createSim(99, {});
+    while (s.phase === 'countdown') stepSim(s, [idle, idle], null);
+    stepSim(s, [{ ...idle, a1: true }, { ...idle, a0: true }], null);
+    for (let i = 0; i < 30; i++) stepSim(s, [idle, idle], null);
+    const back = decodeState(encodeState(s), createSim(99, {}));
+    if (back.bananas.length !== s.bananas.length) throw new Error('bananas lost in transit');
+    if (Math.abs(back.players[1].cd0 - s.players[1].cd0) > 1e-3) throw new Error('cooldown lost in transit');
+    if (Math.abs(back.players[0].cd1 - s.players[0].cd1) > 1e-3) throw new Error('cooldown lost in transit');
+  }
+  console.log('  abil  kick lands, banana trips, magnet rips; cooldowns equal; state survives the wire');
+  ok++;
+} catch (e) {
+  console.error('  FAIL  abilities\n        ' + e.message);
+  bad++;
+}
+
+/* ---- the deploy switch in index.html has to resolve the way the docs claim ---- */
+try {
+  const cases = [
+    ['', 'http:', 'localhost:8080', '', 'blank config opens no socket'],
+    ['auto', 'https:', 'game.example.com', 'wss://game.example.com/ws', 'auto derives wss on https'],
+    ['auto', 'http:', 'localhost:8080', 'ws://localhost:8080/ws', 'auto derives ws on http'],
+    ['wss://relay.example.com/ws', 'https:', 'game.example.com', 'wss://relay.example.com/ws', 'explicit relay is used verbatim'],
+  ];
+  for (const [relay, protocol, host, want, label] of cases) {
+    globalThis.STB_CONFIG = { relay };
+    globalThis.location = { protocol, host, search: '' };
+    const mod = await import(pathToFileURL(path.join(SRC, 'core/platform.js')).href + '?c=' + encodeURIComponent(relay + protocol + host));
+    const got = mod.relayUrl();
+    if (got !== want) throw new Error(`${label}: expected "${want}", got "${got}"`);
+    if (mod.onlineEnabled() !== !!want) throw new Error(`${label}: onlineEnabled disagrees`);
+  }
+  console.log(`  cfg   relay switch resolves correctly in all ${cases.length} deploy shapes`);
+  ok++;
+} catch (e) {
+  console.error('  FAIL  relay config\n        ' + e.message);
+  bad++;
+}
+
+/* ---- a sandboxed iframe can deny storage outright; the game must still run ---- */
+try {
+  const denied = () => { throw new DOMException('The operation is insecure.', 'SecurityError'); };
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    get() { denied(); },
+  });
+  // re-import with a cache-busting query so initStorage re-runs detection
+  const mod = await import(pathToFileURL(path.join(SRC, 'core/storage.js')).href + '?denied=1');
+  const { backend } = await mod.initStorage();
+  if (backend !== 'memory') throw new Error(`expected the memory backend, got "${backend}"`);
+  mod.addCoins(25);
+  await mod.flush();                        // must not throw
+  if (mod.profile.coins < 25) throw new Error('in-memory profile did not take the write');
+  console.log(`  store storage denied -> fell back to "${backend}", game still writable`);
+  ok++;
+} catch (e) {
+  console.error('  FAIL  storage-denied fallback\n        ' + e.message);
+  bad++;
+}
+
+console.log(`\n${bad ? '❌' : '✅'} ${ok} passed, ${bad} failed`);
+process.exit(bad ? 1 : 0);

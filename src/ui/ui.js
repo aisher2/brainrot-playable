@@ -1,0 +1,1042 @@
+/* ============================================================
+   ui.js - every screen, the HUD, and the glue to the profile.
+
+   Emits intents ('play', 'practice', 'again', 'home', 'cancel',
+   'quit', 'emote', 'setting') and never touches the game directly.
+   ============================================================ */
+
+import { Emitter, clamp01, fmtTime, pad2 } from '../core/util.js';
+import {
+  profile, store, levelInfo, displayName, setName, tryEquip, isUnlocked,
+  todaysChallenges, achievementList,
+  collectedCount, setSetting, getSetting, save,
+} from '../core/storage.js';
+import { BRAINROTS, RARITY, RARITY_ORDER, BRAINROT_BY_ID } from '../data/brainrots.js';
+import { SLOTS, findItem, unlockText } from '../data/cosmetics.js';
+import { msUntilMidnight, xpForLevel } from '../data/progression.js';
+import { fetchBoard } from '../net/leaderboard.js';
+import { CONFIG } from '../core/platform.js';
+import { sfx } from '../core/audio.js';
+
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, html) => {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (html != null) e.innerHTML = html;
+  return e;
+};
+
+/* ---------------------------------------------------------------
+   Loading screen gags. The progress bar stays honest - only the
+   commentary is nonsense. All original; shuffled every launch so
+   two boots never read the same.
+   --------------------------------------------------------------- */
+const BOOT_GAGS = [
+  'waking up 28 idiots', 'negotiating with the brainrot', 'inflating the banana supply',
+  'teaching the bot to lose gracefully', 'hiding the good hats', 'bribing the physics',
+  'polishing four thousand tiny cubes', 'asking the arena to hold still',
+  'measuring everyone grip strength', 'untangling the confetti', 'feeding the magnet',
+  'stretching before the brawl', 'printing one (1) brainrot', 'gluing the hats on',
+  'rehearsing the victory dance', 'making the floor slightly worse',
+  'hiding bananas in tactical locations', 'explaining "steal" to the bot',
+  'double knotting everyone laces', 'loading exactly enough chaos',
+  'counting the bananas twice', 'yelling at the shaders', 'giving everyone the same legs',
+  'sharpening the kick', 'checking nobody brought a real weapon',
+  'convincing the camera to behave', 'installing extra nonsense',
+  'arguing about the rules', 'warming up the slip animation', 'buffing the shiny bits',
+];
+
+const BOOT_TIPS = [
+  ['TIP', 'dash into people. that is the whole tip.'],
+  ['FACT', 'the brainrot does not care who you are.'],
+  ['TIP', 'bananas are a war crime. use them anyway.'],
+  ['FACT', 'holding it for twenty seconds counts as a personality.'],
+  ['TIP', 'the last ten seconds decide everything. panic accordingly.'],
+  ['FACT', 'nobody has ever slipped on a banana on purpose.'],
+  ['TIP', 'kick first. apologise never.'],
+  ['FACT', 'the magnet is not magnetic. it is worse.'],
+  ['TIP', 'you can steal it back. you will need to.'],
+  ['FACT', 'every hat is load bearing.'],
+  ['TIP', 'standing still is a bold strategy and a bad one.'],
+  ['FACT', 'the floor is only mostly solid.'],
+];
+
+const BOOT_FACES = ['🧠', '🍌', '👑', '🦵', '💨', '😵', '🤪', '🤯', '🥴'];
+
+const SCREENS = ['menu', 'friend', 'search', 'hud', 'result', 'collect', 'custom', 'board', 'quests', 'settings'];
+
+/** rAF, but with a timer fallback: background tabs stop firing rAF and
+    thumbnails would then never appear. */
+function nextFrame(fn) {
+  let done = false;
+  const go = () => { if (!done) { done = true; fn(); } };
+  requestAnimationFrame(go);
+  setTimeout(go, 40);
+}
+
+export class UI extends Emitter {
+  constructor(studio) {
+    super();
+    this.studio = studio;
+    this.current = '';
+    this.stack = [];
+    this.customTab = 'skin';
+    this.rarityFilter = 'all';
+    this.thumbQueue = [];
+    this.thumbTimer = 0;
+    this.previewT = 0;
+    this.toastCd = 0;
+    this.lastScores = [0, 0];
+    this.names = ['PLAYER 1', 'PLAYER 2'];
+    this.onlineAvailable = false;
+    this._soloTimer = 0;
+    this._searchBase = '';
+    this._bind();
+  }
+
+  /* ==================================================== boot */
+  setLoading(pct, text) {
+    const p = clamp01(pct);
+    const f = $('loadfill');
+    if (f) f.style.width = Math.round(p * 100) + '%';
+    const n = $('bootPct');
+    if (n) n.textContent = Math.round(p * 100) + '%';
+    // The gag reel owns the caption while it is running; the real stage text
+    // is the fallback so the screen still says something sensible without it.
+    if (text && !this._bootTimer) { const t = $('loadtxt'); if (t) t.textContent = text; }
+    if (p >= 1) {
+      this.stopBootGags();
+      const t = $('loadtxt');
+      if (t) { t.textContent = 'brainrot achieved'; t.classList.add('pop'); }
+    }
+  }
+
+  /** Rotating nonsense + a cycling mascot, so the wait is worth watching. */
+  startBootGags() {
+    const tip = $('bootTip');
+    if (tip) {
+      const [k, line] = BOOT_TIPS[(Math.random() * BOOT_TIPS.length) | 0];
+      tip.innerHTML = '';
+      const b = el('b', '', k);
+      tip.appendChild(b);
+      tip.appendChild(document.createTextNode(' · ' + line));
+    }
+    const bag = BOOT_GAGS.slice();
+    for (let i = bag.length - 1; i > 0; i--) {
+      const j = (Math.random() * (i + 1)) | 0;
+      const t = bag[i]; bag[i] = bag[j]; bag[j] = t;
+    }
+    let i = 0;
+    const step = () => {
+      const t = $('loadtxt');
+      if (t) {
+        t.textContent = bag[i % bag.length];
+        t.classList.remove('pop');
+        void t.offsetWidth;                 // restart the pop
+        t.classList.add('pop');
+      }
+      const face = $('bootBrain');
+      if (face && i % 2 === 1) face.textContent = BOOT_FACES[((i >> 1) + 1) % BOOT_FACES.length];
+      i++;
+    };
+    step();
+    this._bootTimer = setInterval(step, 430);
+  }
+
+  stopBootGags() {
+    if (this._bootTimer) { clearInterval(this._bootTimer); this._bootTimer = 0; }
+  }
+
+  hideBoot() {
+    this.stopBootGags();
+    const b = $('boot');
+    if (!b) return;
+    b.style.transition = 'opacity .35s ease';
+    b.style.opacity = '0';
+    setTimeout(() => { b.remove(); }, 400);
+    const ui = $('ui');
+    if (ui) ui.hidden = false;
+  }
+
+  /* ==================================================== screens */
+  show(name, opts = {}) {
+    if (!SCREENS.includes(name)) return;
+    for (const s of SCREENS) {
+      const e = $('s-' + s);
+      if (e) e.classList.toggle('show', s === name);
+    }
+    const prev = this.current;
+    this.current = name;
+    if (opts.push && prev) this.stack.push(prev);
+    if (!opts.push) this.stack.length = 0;
+
+    switch (name) {
+      case 'menu':     this.renderMenu(); break;
+      case 'collect':  this.renderCollection(); break;
+      case 'custom':   this.renderCustomize(); break;
+      case 'board':    this.renderBoard(); break;
+      case 'quests':   this.renderQuests(); break;
+      case 'settings': this.renderSettings(); break;
+      default: break;
+    }
+    this.emit('screen', name);
+  }
+
+  back() {
+    sfx.back();
+    const prev = this.stack.pop();
+    this.show(prev || 'menu');
+  }
+
+  /* ==================================================== binding */
+  _bind() {
+    const click = (id, fn) => {
+      const e = $(id);
+      if (e) e.addEventListener('click', (ev) => { ev.preventDefault(); sfx.ui(); fn(ev); });
+    };
+
+    click('btnPlay', () => this.emit('play'));
+    click('btnPractice', () => this.emit('practice'));
+    click('btnBrainrots', () => this.show('collect', { push: true }));
+    click('btnCustomize', () => this.show('custom', { push: true }));
+    click('btnBoard', () => this.show('board', { push: true }));
+    click('btnQuests', () => this.show('quests', { push: true }));
+    click('btnSettings', () => this.show('settings', { push: true }));
+    click('btnCancelSearch', () => this.emit('cancel'));
+    click('btnSoloOffer', () => this.emit('playSolo'));
+    click('btnFriend', () => this.showFriend());
+    click('btnFriendBack', () => { this.emit('cancelFriend'); this.show('menu'); });
+    click('btnMakeRoom', () => { this.setFriendError(''); this.emit('makeRoom'); });
+    click('btnJoinRoom', () => {
+      const code = ($('joinCode').value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (code.length !== 4) { this.setFriendError('Codes are 4 characters.'); sfx.error(); return; }
+      this.setFriendError('');
+      this.emit('joinRoom', code);
+    });
+    const jc = $('joinCode');
+    if (jc) {
+      // codes are always upper case and never contain the ambiguous glyphs
+      jc.addEventListener('input', () => {
+        jc.value = jc.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+      });
+      jc.addEventListener('keydown', (e) => { if (e.code === 'Enter') $('btnJoinRoom').click(); });
+    }
+    click('btnAgain', () => this.emit('again'));
+    click('btnHome', () => this.emit('home'));
+    click('btnQuit', () => this.emit('quit'));
+    // the steal prompt is a shortcut for "dash at them", not a new mechanic
+    const st = $('btnSteal');
+    if (st) st.addEventListener('pointerdown', (e) => { e.preventDefault(); this.emit('stealTap'); });
+    click('btnMute', () => this._toggleMute());
+
+    for (const b of document.querySelectorAll('.sheet-head .back')) {
+      b.addEventListener('click', (e) => { e.preventDefault(); this.back(); });
+    }
+
+    const nameInput = $('nameInput');
+    if (nameInput) {
+      nameInput.addEventListener('input', () => {
+        setName(nameInput.value);
+        const pv = $('pvName');
+        if (pv) pv.textContent = displayName();
+      });
+      nameInput.addEventListener('blur', () => { nameInput.value = profile.name; save(true); });
+    }
+
+    // Escape / browser back closes a sheet
+    addEventListener('keydown', (e) => {
+      if (e.code !== 'Escape') return;
+      if (['collect', 'custom', 'board', 'quests', 'settings'].includes(this.current)) this.back();
+    });
+
+    store.on('coins', () => this._refreshCoins());
+    store.on('xp', () => this._refreshLevel());
+  }
+
+  _toggleMute() {
+    const on = !(getSetting('music') || getSetting('sfx'));
+    setSetting('music', on);
+    setSetting('sfx', on);
+    this.emit('setting', 'mute', !on);
+    this._refreshMute();
+  }
+
+  _refreshMute() {
+    const b = $('btnMute');
+    if (b) b.textContent = (getSetting('music') || getSetting('sfx')) ? '🔊' : '🔇';
+  }
+
+  /* ==================================================== menu */
+  renderMenu() {
+    this._refreshLevel();
+    this._refreshMute();
+    const st = $('streakChip');
+    if (st) st.textContent = '🔥 streak ' + profile.streak;
+    const q = $('questsLabel');
+    if (q) {
+      const pending = todaysChallenges().filter((c) => c.done).length;
+      q.textContent = pending ? `QUESTS (${pending})` : 'QUESTS';
+    }
+  }
+
+  setNetStatus(kind, text) {
+    const c = $('netChip');
+    if (!c) return;
+    c.className = 'chip' + (kind === 'ok' ? ' live' : kind === 'err' ? ' err' : '');
+    c.textContent = text;
+  }
+
+  setPlaySub(text) { const e = $('playSub'); if (e) e.textContent = text; }
+
+  /**
+   * With no relay configured there is nothing to queue for, so PLAY starts a
+   * solo match directly and the separate practice button would just be a
+   * confusing duplicate. Someone opening the page cold always gets one
+   * obvious button that starts a game.
+   */
+  setOnlineAvailable(on) {
+    this.onlineAvailable = !!on;
+    const prac = $('btnPractice');
+    const chip = $('netChip');
+    const label = document.querySelector('#btnPlay > span');
+    if (chip) chip.hidden = !on;
+    // With a relay, PLAY means a real person and PRACTICE is the separate
+    // opt-in. Without one there is no real person to find, so the primary
+    // button says exactly what it will give you rather than quietly
+    // substituting a bot behind the word PLAY.
+    if (prac) prac.hidden = !on;
+    if (label) label.textContent = on ? 'PLAY' : 'PLAY VS BOT';
+  }
+
+  _refreshLevel() {
+    const li = levelInfo();
+    const n = $('lvlNum'); if (n) n.textContent = li.level;
+    const f = $('xpFill'); if (f) f.style.width = Math.round(li.pct * 100) + '%';
+    this._refreshCoins();
+  }
+
+  _refreshCoins() {
+    const c = $('coinCount');
+    if (c) c.textContent = profile.coins + ' 🧠';
+  }
+
+  /* ==================================================== play with a friend */
+  showFriend() {
+    this.show('friend');
+    this.setRoomCode('');
+    this.setFriendError('');
+    const jc = $('joinCode');
+    if (jc) jc.value = '';
+  }
+
+  /** '' hides the code panel; a code shows it and starts the wait */
+  setRoomCode(code) {
+    const box = $('codeBox');
+    if (!box) return;
+    box.hidden = !code;
+    if (code) {
+      $('roomCode').textContent = code;
+      $('codeWait').textContent = 'waiting for your friend to join...';
+      sfx.unlock();
+    }
+  }
+
+  setFriendError(msg) {
+    const e = $('friendErr');
+    if (e) { e.textContent = msg || ''; e.classList.remove('info'); }
+  }
+
+  /** neutral "working on it" line, so the button never looks like it did nothing */
+  setFriendBusy(msg) {
+    const e = $('friendErr');
+    if (e) { e.textContent = msg || ''; e.classList.toggle('info', !!msg); }
+  }
+
+  /** lock the two actions while one of them is in flight */
+  setFriendPending(on) {
+    for (const id of ['btnMakeRoom', 'btnJoinRoom']) {
+      const b = $(id);
+      if (b) b.disabled = !!on;
+    }
+  }
+
+  /* ==================================================== matchmaking */
+  showSearch(mode) {
+    this.show('search');
+    this.hideSoloOffer();
+    if (mode !== 'practice') {
+      // PLAY queues for a REAL opponent and keeps queueing. Only after a long
+      // wait do we mention the bot, and then only as a small secondary link -
+      // never as the primary action, and never automatically.
+      clearTimeout(this._soloTimer);
+      this._soloTimer = setTimeout(() => this.showSoloOffer(), 25000);
+    }
+    const title = $('searchTitle');
+    if (title) { title.textContent = 'SEARCHING FOR OPPONENT...'; title.classList.remove('found'); }
+    const foe = $('mmFoeCard');
+    if (foe) foe.classList.remove('found');
+    const fa = $('mmFoeAv'); if (fa) fa.textContent = '?';
+    const fn = $('mmFoeName'); if (fn) fn.textContent = '...';
+    const me = $('mmMeName'); if (me) me.textContent = displayName();
+    const av = $('mmMeAv');
+    if (av) av.textContent = FACE_EMOJI[profile.loadout.face] || '🙂';
+    this.setSearchSub(mode === 'practice'
+      ? 'practice mode - offline bot opponent'
+      : 'connecting to the brainrot network');
+  }
+
+  setSearchSub(text) {
+    const e = $('searchSub');
+    if (e) { e.textContent = text; this._searchBase = text; }
+  }
+
+  /** ticking "waiting 0:14" so a real queue never looks frozen */
+  setSearchWait(secs) {
+    const e = $('searchSub');
+    if (!e || secs < 3) return;
+    const m = Math.floor(secs / 60), ss = Math.floor(secs % 60);
+    e.textContent = `${this._searchBase || 'looking for an opponent'} · ${m}:${pad2(ss)}`;
+  }
+
+  showSoloOffer(label) {
+    const b = $('btnSoloOffer');
+    if (!b) return;
+    if (label) b.querySelector('small').textContent = label;
+    b.hidden = false;
+  }
+
+  hideSoloOffer() {
+    clearTimeout(this._soloTimer);
+    const b = $('btnSoloOffer');
+    if (b) b.hidden = true;
+  }
+
+  showOpponentFound(opp) {
+    this.hideSoloOffer();
+    const title = $('searchTitle');
+    if (title) { title.textContent = 'OPPONENT FOUND!'; title.classList.add('found'); }
+    const foe = $('mmFoeCard');
+    if (foe) foe.classList.add('found');
+    const fa = $('mmFoeAv');
+    if (fa) fa.textContent = opp?.loadout ? (FACE_EMOJI[opp.loadout.face] || '😈') : '😈';
+    const fn = $('mmFoeName');
+    if (fn) fn.textContent = (opp?.name || 'OPPONENT').slice(0, 12);
+    this.setSearchSub(opp?.isBot ? 'PRACTICE BOT - not a real player' : 'level ' + (opp?.level || 1));
+    sfx.matched();
+  }
+
+  /* ==================================================== HUD */
+  /** announce the arena at the top of the round, then fade it away */
+  setMapName(name) {
+    const e = $('mapChip');
+    if (!e) return;
+    e.textContent = name || '';
+    e.classList.remove('on');
+    void e.offsetWidth;                 // restart the animation
+    if (name) e.classList.add('on');
+  }
+
+  setMatchNames(a, b) {
+    this.names = [a, b];
+    const n1 = document.querySelector('#scoreP1 .nm');
+    const n2 = document.querySelector('#scoreP2 .nm');
+    if (n1) n1.textContent = a;
+    if (n2) n2.textContent = b;
+  }
+
+  setScores(a, b) {
+    for (const [i, v] of [[0, a], [1, b]]) {
+      const box = $('scoreP' + (i + 1));
+      if (!box) continue;
+      const s = box.querySelector('.sc');
+      if (s && s.textContent !== String(v)) {
+        s.textContent = v;
+        if (v > this.lastScores[i]) {
+          box.classList.remove('bump');
+          void box.offsetWidth;
+          box.classList.add('bump');
+        }
+      }
+      this.lastScores[i] = v;
+    }
+  }
+
+  setHoldBars(a, b) {
+    const t = Math.max(1, a + b);
+    const e1 = document.querySelector('#scoreP1 .hold');
+    const e2 = document.querySelector('#scoreP2 .hold');
+    if (e1) e1.style.width = (a / t * 100) + '%';
+    if (e2) e2.style.width = (b / t * 100) + '%';
+  }
+
+  setTime(sec) {
+    const n = $('timeNum');
+    const v = Math.ceil(sec);
+    if (n && n.textContent !== String(v)) n.textContent = v;
+    const box = $('timerBox');
+    if (box) box.classList.toggle('warn', sec <= 10.001);
+  }
+
+  setHolder(idx, golden) {
+    const bar = $('holderBar');
+    const txt = $('holderTxt');
+    if (!bar || !txt) return;
+    bar.classList.remove('p1', 'p2', 'loose');
+    if (idx < 0) {
+      bar.classList.add('loose');
+      txt.textContent = 'BRAINROT IS LOOSE - GRAB IT!';
+    } else {
+      bar.classList.add(idx === 0 ? 'p1' : 'p2');
+      txt.textContent = (golden ? '👑 2x - ' : 'BRAINROT HOLDER: ') + this.names[idx];
+    }
+    for (let i = 0; i < 2; i++) {
+      const box = $('scoreP' + (i + 1));
+      if (box) box.classList.toggle('owner', idx === i);
+    }
+  }
+
+  toast(text, kind = '') {
+    const host = $('toasts');
+    if (!host) return;
+    const t = el('div', 'toast ' + kind, text);
+    host.appendChild(t);
+    setTimeout(() => t.remove(), 1600);
+    while (host.children.length > 3) host.firstChild.remove();
+  }
+
+  bigMsg(text) {
+    const e = $('bigMsg');
+    if (!e) return;
+    e.textContent = text;
+    e.classList.remove('on');
+    void e.offsetWidth;
+    e.classList.add('on');
+  }
+
+  countdown(label, isGo) {
+    const e = $('countdown');
+    if (!e) return;
+    e.textContent = label;
+    e.classList.remove('tick', 'go');
+    void e.offsetWidth;
+    e.classList.add(isGo ? 'go' : 'tick');
+  }
+
+  eventBanner(label, sub) {
+    const e = $('eventBanner');
+    if (!e) return;
+    e.innerHTML = label + (sub ? `<div style="font-size:.4em;-webkit-text-stroke:3px var(--ink);opacity:.9">${sub}</div>` : '');
+    e.classList.remove('on');
+    void e.offsetWidth;
+    e.classList.add('on');
+  }
+
+  /* ==================================================== abilities */
+  _ability(i) {
+    if (!this._abtns) this._abtns = [$('btnA0'), $('btnA1'), $('btnA2'), $('btnDash')];
+    return this._abtns[i];
+  }
+
+  /**
+   * One readout per ability: a conic sweep that unwinds, the seconds left,
+   * and a green ring the moment it is usable again. This is the only
+   * cooldown information a touch player gets, so it is never hidden.
+   */
+  setAbility(i, cd, max, charges) {
+    const b = this._ability(i);
+    if (!b) return;
+    const pickup = typeof charges === 'number';
+    const cooling = cd > 0.05;
+
+    if (pickup) {
+      // Pickup-gated: the readout is how many you have banked, not a timer.
+      const had = b.dataset.charges | 0;
+      if (had !== charges) {
+        b.dataset.charges = String(charges);
+        b.querySelector('.cnt').textContent = String(charges);
+        if (charges > had) {
+          b.classList.remove('gained');
+          void b.offsetWidth;
+          b.classList.add('gained');
+          if (had === 0 && this._readyAnnounce) this._readyAnnounce(i);
+        }
+      }
+      const usable = charges > 0 && !cooling;
+      b.classList.toggle('empty', charges === 0);
+      b.classList.toggle('has', charges > 0);
+      b.classList.toggle('ready', usable);
+      b.classList.toggle('cooling', false);
+      b.dataset.ready = usable ? '1' : '0';
+      return;
+    }
+
+    const wasReady = b.dataset.ready === '1';
+    b.classList.toggle('cooling', cooling);
+    b.classList.toggle('ready', !cooling);
+    if (cooling) {
+      const cdEl = b.querySelector('.cd');
+      cdEl.style.setProperty('--sweep', (360 * (cd / max)).toFixed(0) + 'deg');
+      const txt = cd >= 1 ? String(Math.ceil(cd)) : cd.toFixed(1);
+      if (cdEl.textContent !== txt) cdEl.textContent = txt;
+      b.dataset.ready = '0';
+    } else if (!wasReady) {
+      b.dataset.ready = '1';
+      b.querySelector('.cd').textContent = '';
+      if (this._readyAnnounce) this._readyAnnounce(i);
+    }
+  }
+
+  /** flash the button when its ability actually fires */
+  fireAbility(i) {
+    const b = this._ability(i);
+    if (!b) return;
+    b.classList.remove('fired');
+    void b.offsetWidth;
+    b.classList.add('fired');
+  }
+
+  onAbilityReady(fn) { this._readyAnnounce = fn; }
+
+  setDashReady(ready) { /* handled by setAbility(3, ...) */ }
+
+  /** big tappable prompt, only while a steal is genuinely possible */
+  setStealPrompt(on) {
+    const b = $('btnSteal');
+    if (!b) return;
+    if (b.hidden === !on) return;
+    b.hidden = !on;
+    if (on) sfx.tick();
+  }
+
+  flash(kind) {
+    const f = $('fx-flash');
+    if (!f) return;
+    f.className = '';
+    void f.offsetWidth;
+    f.className = kind;
+  }
+
+  /* ==================================================== results */
+  showResult(data) {
+    this.show('result');
+    const { result, myStats, theirStats, rewards, unlocked, challenges, achievements, newBrainrot, levelUp } = data;
+
+    const crown = $('resultCrown');
+    const title = $('resultTitle');
+    const who = $('winnerName');
+    title.classList.remove('lose', 'draw');
+    if (result === 'win') { crown.textContent = '🏆'; title.textContent = 'WINNER!'; }
+    else if (result === 'draw') { crown.textContent = '🤝'; title.textContent = 'DRAW!'; title.classList.add('draw'); }
+    else { crown.textContent = '💀'; title.textContent = 'DEFEAT'; title.classList.add('lose'); }
+    who.textContent = result === 'draw' ? 'NOBODY WINS' : (result === 'win' ? displayName() : this.names[data.winnerIdx] || 'OPPONENT');
+
+    const grid = $('statGrid');
+    grid.innerHTML = '';
+    const stat = (label, val) => {
+      const d = el('div', 'st');
+      d.appendChild(el('small', '', label));
+      d.appendChild(el('b', '', val));
+      grid.appendChild(d);
+    };
+    stat('SCORE', String(myStats.score));
+    stat('OPPONENT', String(theirStats.score));
+    stat('BRAINROT TIME', myStats.holdTime.toFixed(1) + 's');
+    stat('LONGEST HOLD', myStats.longestHold.toFixed(1) + 's');
+    stat('STEALS', String(myStats.steals));
+    stat('DASH HITS', String(myStats.dashHits));
+
+    const list = $('rewardList');
+    list.innerHTML = '';
+    let delay = 0;
+    // a monster round can unlock a lot at once; keep the screen a screen
+    const MAX_ROWS = 6;
+    let hidden = 0;
+    const row = (label, val, cls = '') => {
+      if (list.children.length >= MAX_ROWS) { hidden++; return; }
+      const d = el('div', 'rw ' + cls, `<span>${label}</span><b>${val}</b>`);
+      d.style.animationDelay = delay.toFixed(2) + 's';
+      delay += 0.07;
+      list.appendChild(d);
+    };
+    row('COINS EARNED', '+' + rewards.coins + ' 🧠', 'gold');
+    row('XP EARNED', '+' + rewards.xp + ' XP');
+    if (data.streak > 1) row('WIN STREAK', '🔥 ' + data.streak);
+    if (newBrainrot) {
+      row(`${newBrainrot.isNew ? 'NEW ' : ''}BRAINROT: ${newBrainrot.def.name}`,
+        RARITY[newBrainrot.def.rarity].name, newBrainrot.isNew ? 'new' : '');
+    }
+    if (levelUp) row('LEVEL UP!', 'LV ' + levelUp, 'new');
+    for (const c of challenges || []) row('CHALLENGE: ' + c.text, '+' + c.coins + ' 🧠', 'new');
+    for (const a of achievements || []) row('ACHIEVEMENT: ' + a.name, '+' + a.coins + ' 🧠', 'new');
+    for (const u of unlocked || []) row('UNLOCKED: ' + u.item.name, u.slot.toUpperCase(), 'new');
+    if (hidden) list.appendChild(el('div', 'rw more', `+${hidden} MORE - SEE QUESTS &amp; CUSTOMIZE`));
+
+    this._refreshLevel();
+  }
+
+  /* ==================================================== collection */
+  renderCollection() {
+    const filters = $('rarityFilters');
+    if (filters && !filters.children.length) {
+      const mk = (id, label) => {
+        const b = el('button', id === this.rarityFilter ? 'on' : '', label);
+        b.addEventListener('click', () => {
+          this.rarityFilter = id;
+          for (const c of filters.children) c.classList.toggle('on', c === b);
+          this._fillCollection();
+          sfx.ui();
+        });
+        filters.appendChild(b);
+      };
+      mk('all', 'ALL');
+      for (const r of RARITY_ORDER) mk(r, RARITY[r].name);
+    }
+    const count = $('collectCount');
+    if (count) count.textContent = collectedCount() + '/' + BRAINROTS.length;
+    this._fillCollection();
+  }
+
+  _fillCollection() {
+    const grid = $('collectGrid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    this.thumbQueue.length = 0;
+    const list = this.rarityFilter === 'all'
+      ? BRAINROTS
+      : BRAINROTS.filter((b) => b.rarity === this.rarityFilter);
+
+    for (const b of list) {
+      const owned = !!profile.collection[b.id];
+      const card = el('div', `card r-${b.rarity}` + (owned ? '' : ' locked'));
+      const thumb = el('div', 'thumb');
+      const img = el('img');
+      img.alt = b.name;
+      img.style.cssText = 'width:100%;height:100%;object-fit:contain;display:block';
+      thumb.appendChild(img);
+      card.appendChild(thumb);
+      card.appendChild(el('div', 'nm', owned ? b.name : '???'));
+      card.appendChild(el('div', 'rar', RARITY[b.rarity].name + (owned ? ` x${profile.collection[b.id]}` : '')));
+      card.addEventListener('click', () => {
+        sfx.ui();
+        if (owned) this.toastInfo(b.name + ' - ' + b.blurb);
+        else this.toastInfo('Not collected yet. Win matches to find it!');
+      });
+      grid.appendChild(card);
+      this.thumbQueue.push({ img, id: b.id, owned });
+    }
+    this._pumpThumbs();
+  }
+
+  _pumpThumbs() {
+    if (!this.studio || !this.studio.ok) return;
+    // each shot is a real render + encode (~6ms), so two per frame keeps the
+    // grid filling visibly without ever stalling a frame
+    const step = () => {
+      let n = 0;
+      while (this.thumbQueue.length && n < 2) {
+        const job = this.thumbQueue.shift();
+        const url = this.studio.brainrotShot(job.id, job.owned ? '' : 'decoy');
+        if (url) job.img.src = url;
+        n++;
+      }
+      if (this.thumbQueue.length) nextFrame(step);
+    };
+    nextFrame(step);
+  }
+
+  toastInfo(text) {
+    const host = $('toasts');
+    if (!host) return;
+    const t = el('div', 'toast info', text);
+    t.style.fontSize = 'clamp(11px,3.4vw,17px)';
+    t.style.maxWidth = '86vw';
+    host.appendChild(t);
+    setTimeout(() => t.remove(), 2200);
+  }
+
+  /* ==================================================== customize */
+  renderCustomize() {
+    const tabs = $('customTabs');
+    if (tabs) {
+      tabs.innerHTML = '';
+      for (const s of SLOTS) {
+        const b = el('button', s.key === this.customTab ? 'on' : '', s.label);
+        b.addEventListener('click', () => {
+          this.customTab = s.key;
+          sfx.ui();
+          this.renderCustomize();
+        });
+        tabs.appendChild(b);
+      }
+    }
+    const nameInput = $('nameInput');
+    if (nameInput) nameInput.value = profile.name;
+    const pv = $('pvName');
+    if (pv) pv.textContent = displayName();
+    this._refreshCoins();
+    this._fillCustomGrid();
+  }
+
+  _fillCustomGrid() {
+    const grid = $('customGrid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    const slot = SLOTS.find((s) => s.key === this.customTab) || SLOTS[0];
+    const jobs = [];
+    for (const item of slot.list) {
+      const owned = isUnlocked(slot.key, item.id);
+      const equipped = profile.loadout[slot.key] === item.id;
+      const card = el('div', `card r-${item.rarity || 'common'}${owned ? '' : ' locked'}${equipped ? ' equipped' : ''}`);
+      const thumb = el('div', 'thumb');
+
+      if (slot.key === 'skin' || slot.key === 'hat' || slot.key === 'face') {
+        const img = el('img');
+        img.style.cssText = 'width:100%;height:100%;object-fit:contain;display:block';
+        thumb.appendChild(img);
+        jobs.push({ img, slot: slot.key, id: item.id });
+      } else {
+        thumb.appendChild(el('div', '', SLOT_ICON(slot.key, item)));
+        thumb.firstChild.style.cssText = 'font-size:30px;line-height:1';
+      }
+      card.appendChild(thumb);
+      card.appendChild(el('div', 'nm', item.name));
+      card.appendChild(el('div', owned ? 'rar' : 'cost', owned ? RARITY[item.rarity || 'common'].name : unlockText(item)));
+
+      card.addEventListener('click', () => {
+        const res = tryEquip(slot.key, item.id);
+        if (res === 'poor') { sfx.error(); this.toastInfo('Not enough 🧠 - go win some matches!'); return; }
+        if (res === 'locked') { sfx.error(); this.toastInfo(item.unlock?.type === 'level' ? `Unlocks at level ${item.unlock.lvl}` : 'Locked behind an achievement'); return; }
+        if (res === 'bought') sfx.unlock(); else sfx.ui();
+        this.renderCustomize();
+        this.emit('loadout');
+      });
+      grid.appendChild(card);
+    }
+    if (this.studio?.ok && jobs.length) {
+      const base = { ...profile.loadout };
+      const step = () => {
+        let n = 0;
+        while (jobs.length && n < 2) {
+          const j = jobs.shift();
+          const url = this.studio.itemShot(j.slot, j.id, base);
+          if (url) j.img.src = url;
+          n++;
+        }
+        if (jobs.length) nextFrame(step);
+      };
+      nextFrame(step);
+    }
+  }
+
+  /** animated 3D preview; driven from the main loop */
+  tick(dt) {
+    if (this.current !== 'custom' || !this.studio?.ok) return;
+    this.previewT += dt;
+    this.studio.drawPreview($('previewCanvas'), profile.loadout, this.previewT);
+  }
+
+  /* ==================================================== leaderboard */
+  async renderBoard() {
+    const list = $('boardList');
+    if (!list) return;
+    list.innerHTML = '<div class="row"><span class="who">loading...</span></div>';
+    const { scope, rows } = await fetchBoard('score');
+    const scopeEl = $('boardScope');
+    if (scopeEl) scopeEl.textContent = scope;
+    list.innerHTML = '';
+    if (!rows.length) {
+      list.appendChild(el('div', 'row', '<span class="who">No scores yet. Go steal something.</span>'));
+      return;
+    }
+    rows.forEach((r, i) => {
+      const row = el('div', 'row' + (r.me ? ' me' : '') + (i === 0 ? ' top1' : ''));
+      row.appendChild(el('span', 'rk', i === 0 ? '👑' : '#' + (i + 1)));
+      row.appendChild(el('span', 'who', r.name));
+      row.appendChild(el('span', 'val', r.score + ' 🧠'));
+      list.appendChild(row);
+    });
+  }
+
+  /* ==================================================== quests */
+  renderQuests() {
+    const daily = $('dailyList');
+    const ach = $('achList');
+    const reset = $('questReset');
+    if (reset) {
+      const ms = msUntilMidnight();
+      reset.textContent = 'resets in ' + pad2(Math.floor(ms / 3600000)) + ':' + pad2(Math.floor(ms / 60000) % 60);
+    }
+    const mk = (host, items) => {
+      host.innerHTML = '';
+      for (const q of items) {
+        const d = el('div', 'quest' + (q.done ? ' done' : ''));
+        d.appendChild(el('div', 't',
+          `<span>${q.text || q.name}</span><em>${q.done ? '✓ DONE' : '+' + q.coins + ' 🧠'}</em>`));
+        const pb = el('div', 'pb');
+        const fill = el('i');
+        fill.style.width = Math.round(clamp01(q.value / q.goal) * 100) + '%';
+        pb.appendChild(fill);
+        d.appendChild(pb);
+        if (q.desc) {
+          const sub = el('div', '', `${q.desc} &middot; ${Math.floor(q.value)}/${q.goal}`);
+          sub.style.cssText = 'font-size:9px;opacity:.5;font-family:system-ui;font-weight:600';
+          d.appendChild(sub);
+        } else {
+          const sub = el('div', '', `${Math.floor(q.value)}/${q.goal}`);
+          sub.style.cssText = 'font-size:9px;opacity:.5;font-family:system-ui;font-weight:600';
+          d.appendChild(sub);
+        }
+        host.appendChild(d);
+      }
+    };
+    if (daily) mk(daily, todaysChallenges());
+    if (ach) mk(ach, achievementList());
+  }
+
+  /* ==================================================== settings */
+  renderSettings() {
+    const host = $('settingsList');
+    if (!host) return;
+    host.innerHTML = '';
+
+    const toggle = (label, sub, key, onChange) => {
+      const row = el('div', 'setrow');
+      row.appendChild(el('span', '', `${label}${sub ? `<small>${sub}</small>` : ''}`));
+      const t = el('div', 'toggle' + (getSetting(key) ? ' on' : ''), '<i></i>');
+      t.addEventListener('click', () => {
+        const v = !getSetting(key);
+        setSetting(key, v);
+        t.classList.toggle('on', v);
+        sfx.ui();
+        this.emit('setting', key, v);
+        onChange?.(v);
+      });
+      row.appendChild(t);
+      host.appendChild(row);
+    };
+
+    toggle('MUSIC', 'chiptune that gets frantic at the end', 'music');
+    toggle('SOUND EFFECTS', '', 'sfx');
+    toggle('SCREEN SHAKE', 'turn off if it feels like too much', 'shake');
+    if (CONFIG.dev) toggle('SHOW FPS', '', 'showFps');
+
+    // quality
+    const qrow = el('div', 'setrow');
+    qrow.appendChild(el('span', '', 'GRAPHICS<small>auto drops detail if the frame rate dips</small>'));
+    const seg = el('div', 'seg');
+    for (const q of ['auto', 'low', 'medium', 'high']) {
+      const b = el('button', getSetting('quality') === q ? 'on' : '',
+        q === 'medium' ? 'MED' : q.toUpperCase());
+      b.addEventListener('click', () => {
+        setSetting('quality', q);
+        for (const c of seg.children) c.classList.toggle('on', c === b);
+        sfx.ui();
+        this.emit('setting', 'quality', q);
+      });
+      seg.appendChild(b);
+    }
+    qrow.appendChild(seg);
+    host.appendChild(qrow);
+
+    // camera sensitivity (swipe to look around)
+    const crow = el('div', 'setrow');
+    crow.appendChild(el('span', '', 'CAMERA SWIPE<small>drag the arena to look around · 0 turns it off</small>'));
+    const cseg = el('div', 'seg');
+    for (const [label, v] of [['OFF', 0], ['LOW', 0.5], ['MED', 1], ['HIGH', 1.8]]) {
+      const b = el('button', Math.abs((getSetting('camSens') ?? 1) - v) < 0.01 ? 'on' : '', label);
+      b.addEventListener('click', () => {
+        setSetting('camSens', v);
+        for (const c of cseg.children) c.classList.toggle('on', c === b);
+        sfx.ui();
+        this.emit('setting', 'camSens', v);
+      });
+      cseg.appendChild(b);
+    }
+    crow.appendChild(cseg);
+    host.appendChild(crow);
+
+    // reset (player-facing, always available)
+    const rrow = el('div', 'setrow');
+    rrow.appendChild(el('span', '', 'RESET PROGRESS<small>wipes coins, levels and collection</small>'));
+    const rb = el('div', 'toggle');
+    rb.style.cssText = 'width:auto;padding:0 14px;display:grid;place-items:center;font-family:var(--font);font-size:11px;color:#ff5b5b';
+    rb.textContent = 'WIPE';
+    let armed = false;
+    rb.addEventListener('click', () => {
+      if (!armed) { armed = true; rb.textContent = 'SURE?'; sfx.error(); setTimeout(() => { armed = false; rb.textContent = 'WIPE'; }, 3000); return; }
+      this.emit('resetProgress');
+    });
+    rrow.appendChild(rb);
+    host.appendChild(rrow);
+
+    if (!CONFIG.dev) {
+      // Everything below is for whoever is running the relay, not for players.
+      // Add ?dev=1 to the URL to bring it back.
+      return;
+    }
+
+    // server
+    const srow = el('div', 'setrow');
+    srow.appendChild(el('span', '', 'MULTIPLAYER SERVER<small>blank = same origin /ws</small>'));
+    const input = el('input');
+    input.type = 'text';
+    input.placeholder = 'wss://your-server/ws';
+    input.value = getSetting('serverUrl') || '';
+    input.addEventListener('change', () => {
+      setSetting('serverUrl', input.value.trim());
+      this.emit('setting', 'serverUrl', input.value.trim());
+    });
+    srow.appendChild(input);
+    host.appendChild(srow);
+
+    // connection test
+    const trow = el('div', 'setrow');
+    trow.appendChild(el('span', '', 'CONNECTION<small id="connResult">tap to test the relay</small>'));
+    const tb = el('button', 'seg', 'TEST');
+    tb.className = 'toggle';
+    tb.style.cssText = 'width:auto;padding:0 14px;display:grid;place-items:center;font-family:var(--font);font-size:11px';
+    tb.textContent = 'TEST';
+    tb.addEventListener('click', () => { sfx.ui(); this.emit('testServer'); });
+    trow.appendChild(tb);
+    host.appendChild(trow);
+
+  }
+
+  setConnResult(text) {
+    const e = document.getElementById('connResult');
+    if (e) e.textContent = text;
+  }
+
+  setFps(v, show) {
+    const c = $('fpsChip');
+    if (c) c.textContent = Math.round(v) + ' fps';
+    let hud = document.getElementById('fpsHud');
+    if (show) {
+      if (!hud) {
+        hud = el('div', '', '');
+        hud.id = 'fpsHud';
+        hud.style.cssText = 'position:fixed;left:6px;bottom:6px;z-index:30;font:700 11px monospace;' +
+          'background:#0008;color:#4dff9b;padding:3px 7px;border-radius:6px;pointer-events:none';
+        document.body.appendChild(hud);
+      }
+      hud.textContent = Math.round(v) + ' fps';
+    } else if (hud) hud.remove();
+  }
+}
+
+const FACE_EMOJI = {
+  happy: '🙂', derp: '😜', sigma: '😎', shock: '😱', angy: '😠',
+  dizzy: '😵', laser: '😤', stars: '🤩',
+};
+
+function SLOT_ICON(slot, item) {
+  if (slot === 'emote') return item.icon || '🎭';
+  if (slot === 'victory') return '🎉';
+  if (slot === 'trail') return item.style === 'fire' ? '🔥' : item.style === 'spark' ? '✨'
+    : item.style === 'bubble' ? '🫧' : item.style === 'goo' ? '🧪'
+    : item.style === 'ribbon' ? '🌈' : item.style === 'rift' ? '🌀' : item.style === 'puff' ? '💨' : '🚫';
+  if (slot === 'plate') return '🏷️';
+  return '❔';
+}
+
+export { $ };
