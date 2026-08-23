@@ -62,6 +62,17 @@ export const CFG = {
   LONGEST_HOLD_BONUS: 20,
   STEAL_WINDOW: 8,           // seconds after a drop that a pickup counts as a steal
 
+  /* HOT POTATO. The brainrot is armed the moment you touch it: hold it too
+     long and it goes off in your hands. Holding earns nothing here - you
+     score by getting rid of it, and by being the one not holding it. */
+  FUSE_START: 6.5,           // fuse length at the top of the round
+  FUSE_MIN: 3.0,             // ...and at the very end
+  FUSE_RAMP: 0.06,           // seconds shaved off per second elapsed
+  BLAST_STUN: 1.5,
+  BLAST_PUSH: 16,
+  BLAST_POINTS: 18,          // to whoever was NOT holding it
+  PASS_POINTS: 3,            // for successfully offloading it
+
   EVENT_MIN: 10,
   EVENT_MAX: 15,
   EVENT_FIRST: 8,
@@ -129,6 +140,29 @@ const EVENT_IDS = ['FRENZY', 'SPEED', 'TELEPORT', 'FREEZE', 'MEGA', 'GOLDEN'];
  * The three abilities. None of them are available by default: each one has to
  * be collected as an orb from the arena floor, and using it spends a charge.
  */
+/**
+ * Round variants. `classic` is the original: hold the brainrot to score.
+ * `potato` inverts it - the thing is a bomb and holding is the danger.
+ *
+ * Which one an online match plays is derived from the shared seed, exactly
+ * like the map, so both clients agree without another wire field.
+ */
+export const VARIANTS = ['classic', 'potato'];
+
+export function variantForSeed(seed) {
+  let h = (seed >>> 0) ^ 0x1b873593;
+  h = Math.imul(h ^ (h >>> 16), 0x7feb352d);
+  h = Math.imul(h ^ (h >>> 15), 0x846ca68b);
+  h = (h ^ (h >>> 16)) >>> 0;
+  return VARIANTS[h % VARIANTS.length];
+}
+
+/** How long the fuse is right now - it tightens as the round runs down. */
+export function fuseLength(s) {
+  const elapsed = CFG.ROUND_TIME - s.timeLeft;
+  return Math.max(CFG.FUSE_MIN, CFG.FUSE_START - elapsed * CFG.FUSE_RAMP);
+}
+
 export const ABILITIES = [
   { slot: 0, id: 'kick',   key: 'Q', icon: '🦵', name: 'YEET KICK' },
   { slot: 1, id: 'banana', key: 'E', icon: '🍌', name: 'BANANA SLIP' },
@@ -182,8 +216,10 @@ export function createSim(seed = 1, opts = {}) {
       x: 0, y: A.DAIS_H + 2.2, z: 0, vx: 0, vy: 0, vz: 0,
       owner: -1, lastOwner: -1, sinceDrop: 99, lock: 0,
       golden: 0, spin: 0, settled: false,
+      fuse: 0,                // hot potato: seconds before it goes off
     },
     decoys: [],
+    variant: VARIANTS.includes(opts.variant) ? opts.variant : 'classic',
     bananas: [],
     orbs: [],
     orbTimer: CFG.ORB_FIRST,
@@ -252,6 +288,7 @@ export function stepSim(s, inputs, fx = null) {
   stepUltimates(s, fx);
   stepBrainrot(s, fx);
   stepPickups(s, fx);
+  stepFuse(s, fx);
   stepScoring(s, fx);
 
   if (s.timeLeft <= 0) endRound(s, fx);
@@ -774,6 +811,14 @@ function stepPickups(s, fx) {
     br.owner = i;
     p.pickups++;
     p.curHold = 0;
+    // a fresh fuse for the new holder, shorter the later it gets
+    if (s.variant === 'potato') {
+      br.fuse = fuseLength(s);
+      // whoever just offloaded it gets paid for the pass
+      if (br.lastOwner === 1 - i && br.sinceDrop < CFG.STEAL_WINDOW) {
+        s.players[1 - i].score += CFG.PASS_POINTS;
+      }
+    }
     const wasSteal = br.lastOwner === 1 - i && br.sinceDrop < CFG.STEAL_WINDOW;
     if (wasSteal) {
       p.steals++;
@@ -800,6 +845,39 @@ function stepPickups(s, fx) {
   }
 }
 
+/* ---------------- HOT POTATO ---------------- */
+function stepFuse(s, fx) {
+  if (s.variant !== 'potato') return;
+  const br = s.br;
+  if (br.owner < 0) { br.fuse = fuseLength(s); return; }
+
+  br.fuse -= DT;
+  if (br.fuse > 0) return;
+
+  /* BOOM. The holder eats it; the other player banks the points. */
+  const i = br.owner;
+  const p = s.players[i];
+  const other = s.players[1 - i];
+
+  const bx = p.x, by = p.y, bz = p.z;
+  R(s);
+  const ang = rng.angle();
+  saveR(s);
+  dropBrainrot(s, Math.cos(ang), Math.sin(ang), null, true);
+  br.fuse = fuseLength(s);
+
+  p.stunT = Math.max(p.stunT, CFG.BLAST_STUN);
+  p.vx += Math.cos(ang) * CFG.BLAST_PUSH;
+  p.vz += Math.sin(ang) * CFG.BLAST_PUSH;
+  p.vy = Math.max(p.vy, 9);
+  p.onGround = false;
+  p.bonked++;
+  p.anim = 4; p.animT = 0.5;
+  other.score += CFG.BLAST_POINTS;
+
+  if (fx) fx.push({ t: 'blast', p: i, x: bx, y: by, z: bz });
+}
+
 function stepScoring(s, fx) {
   const br = s.br;
   // track the biggest hole each player has climbed out of (Comeback Kid)
@@ -815,6 +893,8 @@ function stepScoring(s, fx) {
   p.curHold += DT;
   p.longestHold = Math.max(p.longestHold, p.curHold);
   if (br.golden > 0) p.goldenTime += DT;
+  // Hot potato pays nothing for holding - that is the whole point of it.
+  if (s.variant === 'potato') return;
   p.acc += CFG.SCORE_RATE * mult * DT;
   while (p.acc >= 1) {
     p.acc -= 1;
@@ -962,12 +1042,12 @@ const PF = [
   'pickups','bonked','lastSecondSteal','maxDeficit','anim','animT',
   'cd0','cd1','cd2','ch0','ch1','ch2','kickT','ultT','slipT','abilityHits',
 ];
-const BF = ['x','y','z','vx','vy','vz','owner','lastOwner','sinceDrop','lock','golden','spin'];
+const BF = ['x','y','z','vx','vy','vz','owner','lastOwner','sinceDrop','lock','golden','spin','fuse'];
 
 export function encodeState(s) {
   const out = [s.tick, s.t, PHASES.indexOf(s.phase), s.phaseT, s.timeLeft, s.rs,
     s.evTimer, s.hazTimer, s.eventsSeen, s.winner, s.longestBonus == null ? -1 : s.longestBonus,
-    round4(s.orbTimer)];
+    round4(s.orbTimer), VARIANTS.indexOf(s.variant)];
   for (let i = 0; i < 2; i++) {
     const p = s.players[i];
     for (const k of PF) out.push(round4(p[k]));
@@ -999,6 +1079,7 @@ export function decodeState(a, into) {
   s.timeLeft = a[k++]; s.rs = a[k++]; s.evTimer = a[k++]; s.hazTimer = a[k++];
   s.eventsSeen = a[k++]; s.winner = a[k++]; s.longestBonus = a[k++];
   s.orbTimer = a[k++];
+  s.variant = VARIANTS[a[k++]] || 'classic';
   for (let i = 0; i < 2; i++) {
     const p = s.players[i];
     for (const f of PF) p[f] = a[k++];

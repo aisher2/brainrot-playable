@@ -206,6 +206,14 @@ export class UI extends Emitter {
     click('btnSoloOffer', () => this.emit('playSolo'));
     click('btnFriend', () => this.showFriend());
     click('btnNameOk', () => this._confirmName());
+    for (const b of document.querySelectorAll('#modePick button')) {
+      b.addEventListener('click', () => {
+        setSetting('variant', b.dataset.v);
+        this._refreshMode();
+        sfx.ui();
+      });
+    }
+    this._refreshMode();
     // the chip already shows who you are, so it is where you go to change it
     const chip = $('lvlChip');
     if (chip) {
@@ -296,6 +304,14 @@ export class UI extends Emitter {
     if (q) {
       const pending = todaysChallenges().filter((c) => c.done).length;
       q.textContent = pending ? `QUESTS (${pending})` : 'QUESTS';
+    }
+  }
+
+  /** highlight whichever round variant practice will use */
+  _refreshMode() {
+    const want = getSetting('variant') || 'classic';
+    for (const b of document.querySelectorAll('#modePick button')) {
+      b.classList.toggle('on', b.dataset.v === want);
     }
   }
 
@@ -473,10 +489,11 @@ export class UI extends Emitter {
 
   /* ==================================================== HUD */
   /** announce the arena at the top of the round, then fade it away */
-  setMapName(name) {
+  setMapName(name, variant) {
     const e = $('mapChip');
     if (!e) return;
-    e.textContent = name || '';
+    e.textContent = variant === 'potato' ? `HOT POTATO \u00b7 ${name}` : (name || '');
+    e.classList.toggle('potato', variant === 'potato');
     e.classList.remove('on');
     void e.offsetWidth;                 // restart the animation
     if (name) e.classList.add('on');

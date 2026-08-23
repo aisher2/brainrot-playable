@@ -193,7 +193,7 @@ function wireUI() {
   // PLAY queues for a real player. Only a build with no relay at all falls
   // through to practice, and in that build the button is labelled PLAY VS BOT.
   ui.on('play', () => startMatch(onlineEnabled() ? 'online' : 'practice'));
-  ui.on('practice', () => startMatch('practice'));
+  ui.on('practice', () => startMatch('practice', { variant: getSetting('variant') || 'classic' }));
   // "the queue is empty, just let me play" - keeps a lone visitor from
   // ever hitting a dead end on the search screen
   ui.on('playSolo', () => { app.mm.cancel(); startMatch('practice'); });
@@ -449,6 +449,9 @@ async function startMatch(mode, opts = {}) {
     if (app.stealTap) { inp.dash = true; app.stealTap = false; }
     return inp;
   };
+  // practice plays whatever the menu says; online derives it from the seed
+  if (opts.variant) info.variant = opts.variant;
+
   const { session, bot } = createSession(info, readInput);
   app.session = session;
   app.bot = bot;
@@ -464,7 +467,7 @@ async function startMatch(mode, opts = {}) {
 
   const brDef = matchBrainrot(info.seed);
   app.view.setMatch({ localIdx: info.idx, loadouts, names, brainrotId: brDef.id });
-  ui.setMapName(app.map.name);
+  ui.setMapName(app.map.name, session.variant);
   ui.setMatchNames(names[0], names[1]);
   ui.setScores(0, 0);
   ui.setHolder(-1);
@@ -642,6 +645,7 @@ function handleFx(list, sim) {
         if (getSetting('shake')) ui.flash('gold');
         break;
       case 'bounce': sfx.bounce(); break;
+      case 'blast': sfx.megaKnock(); duckMusic(0.5); break;
       case 'tramp': sfx.boost(); break;
       case 'zone': break;
       case 'go': ui.bigMsg('GO!'); break;

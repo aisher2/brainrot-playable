@@ -105,6 +105,24 @@ second stick and a keyboard needs no mouse.
 
 ---
 
+## Two round variants
+
+| | How you score |
+| --- | --- |
+| **CLASSIC** | hold the Brainrot. +1 every 0.25s, +10 for a steal |
+| **HOT POTATO** | the Brainrot is armed. Holding pays **nothing** - you score by offloading it (+3) and by being the one not holding it when it goes off (+18) |
+
+The fuse starts at 6.5s and tightens to 3.0s by the end of the round, so late
+passes get frantic. The Brainrot reddens, smokes and shakes the camera as it
+gets close, so you never need to watch a number.
+
+Practice uses whichever mode is selected on the menu. Online matches derive
+it from the shared seed - the same trick the maps use - so both clients agree
+without another wire field, and the mode is announced next to the map name at
+the start of the round.
+
+---
+
 ## The maps
 
 Five arenas in `src/game/maps.js`. Which one you get is derived from the match

@@ -286,6 +286,17 @@ export class GameView {
           this.shock(f.x, f.z, hex('#ffe14d'), 3, 0.4, 0.1);
           this.cam.addShake(0.6);
           break;
+        case 'blast': {
+          this.particles.burst(f.x, f.y + 0.7, f.z, hex('#ff8a1f'), 46, 17,
+            { color2: hex('#fff3ad'), glow: 0.9, life: 0.75 });
+          this.particles.burst(f.x, f.y + 0.7, f.z, hex('#ff3d3d'), 26, 11,
+            { color2: hex('#ffd23f'), glow: 0.7 });
+          this.particles.groundSpray(f.x, staticHeight(f.x, f.z), f.z, hex('#ffb03f'), 22, 15);
+          this.shock(f.x, f.z, hex('#ff8a1f'), 9, 0.7, 0.22);
+          this.cam.addShake(1.4);
+          this.hitFlash = 1;
+          break;
+        }
         case 'orbDrop':
           this.particles.puff(f.x, f.y, f.z, ORB_COL[f.kind], 6);
           this.shock(f.x, f.z, ORB_COL[f.kind], 2.2, 0.3, 0.07);
@@ -413,6 +424,29 @@ export class GameView {
 
     /* --- players --- */
     for (let i = 0; i < 2; i++) this._drawPlayer(sim, i, dt);
+
+    /* --- hot potato fuse: the closer it is to going off, the angrier it
+           looks and the faster it pulses. This is the only warning a player
+           gets, so it has to read without looking at the HUD. --- */
+    if (sim.variant === 'potato' && sim.br.owner >= 0) {
+      const f = Math.max(0, sim.br.fuse);
+      const heat = 1 - Math.min(1, f / 3);            // last 3s is the panic zone
+      if (heat > 0) {
+        const b = sim.br;
+        const rate = 6 + heat * 26;
+        if (Math.sin(this.time * rate) > 0.2 && Math.random() < 0.5 + heat * 0.4) {
+          this.particles.emit({
+            x: b.x + (Math.random() - 0.5) * 0.9, y: b.y + 0.5 + Math.random() * 0.5,
+            z: b.z + (Math.random() - 0.5) * 0.9,
+            vy: 1.4 + Math.random(), life: 0.35 + Math.random() * 0.25,
+            size: 0.16 + heat * 0.16, grow: 0.6,
+            color: hex(heat > 0.6 ? '#ff3d3d' : '#ff8a1f'), color2: hex('#ffe14d'),
+            glow: 0.8, grav: -0.2, drag: 2.2, fade: 1,
+          });
+        }
+        if (heat > 0.75 && Math.sin(this.time * 30) > 0.85) this.cam.addShake(0.12);
+      }
+    }
 
     /* --- ability orbs --- */
     if (sim.orbs && sim.orbs.length) this._drawOrbs(sim, dt);

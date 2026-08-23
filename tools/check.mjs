@@ -274,6 +274,57 @@ try {
     console.log('  ws    handshake matches the RFC 6455 published vector (server and client)');
   }
 
+  /* HOT POTATO: holding has to be the dangerous thing, not the rewarding one */
+  {
+    const { VARIANTS, variantForSeed, fuseLength } = await import(
+      pathToFileURL(path.join(SRC, 'game/sim.js')).href);
+
+    // both clients must land on the same variant from the same seed
+    let disagreed = 0;
+    const spread = {};
+    for (let i = 0; i < 20000; i++) {
+      const seed = (Math.random() * 0xffffffff) >>> 0;
+      const v = variantForSeed(seed);
+      if (v !== variantForSeed(seed)) disagreed++;
+      spread[v] = (spread[v] || 0) + 1;
+    }
+    if (disagreed) throw new Error('variantForSeed is not deterministic');
+    for (const v of VARIANTS) {
+      const pct = (spread[v] || 0) / 200;
+      if (pct < 35 || pct > 65) throw new Error(`variant ${v} shows up ${pct.toFixed(1)}% of the time`);
+    }
+
+    // classic still pays for holding
+    const classic = createSim(4242, { brainrotId: 'banana', variant: 'classic' });
+    while (classic.phase === 'countdown') stepSim(classic, [idle, idle], null);
+    classic.br.owner = 0;
+    for (let i = 0; i < 120; i++) stepSim(classic, [idle, idle], null);
+    if (classic.players[0].score <= 0) throw new Error('classic stopped paying for holding');
+
+    // potato pays nothing for holding, and goes off
+    const pot = createSim(4242, { brainrotId: 'banana', variant: 'potato' });
+    while (pot.phase === 'countdown') stepSim(pot, [idle, idle], null);
+    pot.br.owner = 0;
+    pot.br.fuse = fuseLength(pot);
+    const fx = [];
+    const before = pot.players[1].score;
+    for (let i = 0; i < Math.ceil(12 / DT); i++) stepSim(pot, [idle, idle], fx);
+
+    if (pot.players[0].score > 0) throw new Error('hot potato paid the holder for holding');
+    if (!fx.some((f) => f.t === 'blast')) throw new Error('the fuse never went off');
+    if (pot.players[1].score <= before) throw new Error('the blast paid nobody');
+    if (pot.br.owner === 0) throw new Error('the holder kept it through the explosion');
+
+    // the fuse tightens as the round runs down
+    const early = fuseLength({ timeLeft: CFG.ROUND_TIME });
+    const late = fuseLength({ timeLeft: 0 });
+    if (!(late < early)) throw new Error('the fuse does not shorten over the round');
+    if (late < CFG.FUSE_MIN - 1e-9) throw new Error('the fuse went below FUSE_MIN');
+
+    console.log(`  mode  hot potato: holding pays 0, fuse ${early.toFixed(1)}s -> ${late.toFixed(1)}s, `
+      + 'blast pays the other player; variant agrees across clients');
+  }
+
   // the wire has to carry ability state and live bananas
   {
     const s = createSim(99, {});

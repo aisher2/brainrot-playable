@@ -12,7 +12,7 @@
    ============================================================ */
 
 import { Emitter, clamp } from '../core/util.js';
-import { DT, CFG, createSim, stepSim, encodeState, decodeState, statsFor } from './sim.js';
+import { DT, CFG, createSim, stepSim, encodeState, decodeState, statsFor, variantForSeed } from './sim.js';
 import { M, S, P, packInput, unpackInput, validPeerMsg } from '../net/protocol.js';
 import { BotAI } from '../net/bot.js';
 import { matchBrainrot } from '../data/brainrots.js';
@@ -37,7 +37,10 @@ class BaseSession extends Emitter {
     this.mode = o.mode || 'online';
     this.readInput = o.readInput || (() => IDLE_INPUT);
     this.brainrot = matchBrainrot(this.seed);
-    this.sim = createSim(this.seed, { brainrotId: this.brainrot.id });
+    // Online both sides derive the variant from the shared seed, so it needs
+    // no wire field; practice can be told explicitly.
+    this.variant = o.variant || variantForSeed(this.seed);
+    this.sim = createSim(this.seed, { brainrotId: this.brainrot.id, variant: this.variant });
     this.fx = [];
     this.acc = 0;
     this.running = false;
@@ -223,7 +226,7 @@ export class ClientSession extends BaseSession {
   constructor(o) {
     super(o);
     this.role = 'client';
-    this.auth = createSim(this.seed, { brainrotId: this.brainrot.id });
+    this.auth = createSim(this.seed, { brainrotId: this.brainrot.id, variant: this.variant });
     this.authTick = 0;
     this.history = new Map();      // tick -> input
     this.sinceInput = 0;
@@ -364,6 +367,7 @@ export function createSession(info, readInput) {
     seed: info.seed,
     opp: info.opp,
     mode: info.mode,
+    variant: info.variant,
     readInput,
   };
   const session = info.host ? new HostSession(base) : new ClientSession(base);
@@ -377,6 +381,7 @@ export function createSession(info, readInput) {
       seed: info.seed,
       opp: info.opp,
       mode: 'practice',
+      variant: info.variant,
       difficulty: info.bot.difficulty,
     });
   }

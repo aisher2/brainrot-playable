@@ -175,6 +175,16 @@ canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;background
 @keyframes popIn{from{transform:scale(.7) rotate(-4deg);opacity:0}to{transform:none;opacity:1}}
 .panel h2{margin:0 0 14px;font-size:24px;color:var(--gold);-webkit-text-stroke:3px var(--ink);paint-order:stroke fill}
 
+/* ============ MODE PICKER ============ */
+.modepick{display:flex;align-items:center;gap:6px;width:100%}
+.modepick > span{font-size:9px;letter-spacing:.18em;opacity:.5;flex:0 0 auto;padding-right:2px}
+.modepick button{
+  flex:1;font-family:var(--font);font-size:10px;letter-spacing:.08em;
+  padding:8px 6px;border-radius:11px;cursor:pointer;white-space:nowrap;
+  background:#ffffff0f;border:2px solid #ffffff26;color:#ffffffb0;
+}
+.modepick button.on{background:var(--gold);border-color:var(--ink);color:var(--ink)}
+
 /* ============ PICK YOUR NAME ============ */
 .namepanel{display:flex;flex-direction:column;gap:12px;align-items:stretch}
 .namebig{background:#00000042;border:3px solid #ffffff26;border-radius:14px;padding:10px 12px}
@@ -278,6 +288,7 @@ canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;background
   color:var(--gold);background:#00000073;border:2px solid #ffffff1f;border-radius:99px;
   padding:4px 15px;white-space:nowrap;opacity:0;pointer-events:none;
 }
+.mapchip.potato{color:#ff8a3d;border-color:#ff8a3d5c}
 .mapchip.on{animation:mapIn 3.6s ease forwards}
 @keyframes mapIn{
   0%{opacity:0;transform:translateX(-50%) translateY(-8px) scale(.9)}

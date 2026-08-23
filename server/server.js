@@ -30,6 +30,10 @@ const ROOT = rootArg > -1 && process.argv[rootArg + 1]
   ? path.resolve(process.cwd(), process.argv[rootArg + 1])
   : path.resolve(__dirname, '..');
 const MAX_CLIENTS = Number(process.env.MAX_CLIENTS || 500);
+/* One address should not be able to eat the whole connection budget. Real
+   players behind one NAT still get plenty; a script opening sockets in a
+   loop hits the wall immediately. */
+const MAX_PER_IP = Number(process.env.MAX_PER_IP || 8);
 const MSG_PER_SEC = 140;             // generous: 60Hz input + 20Hz snapshots
 const IDLE_MS = 45000;
 
@@ -50,6 +54,56 @@ const ROOM_TTL_MS = 15 * 60 * 1000;
 /** text formats worth compressing; images and fonts are already packed */
 const GZIP_EXT = new Set(['.html', '.js', '.mjs', '.css', '.json', '.svg', '.txt', '.map', '.ico']);
 const gzipCache = new Map();
+
+/* ------------------------------------------------------------
+   security headers
+
+   The game is meant to be embeddable (YouTube Playables runs it in an
+   iframe), so framing stays open on purpose - locking it down would break
+   the platform it was built for. Everything else is closed:
+
+   - script/style are same-origin, plus the inline config block and the
+     Playables SDK when that build is used
+   - connect-src has to allow arbitrary ws/wss/https because the relay and
+     leaderboard can be configured to live on another host
+   - object/base/form are switched off outright; the game uses none of them
+   ------------------------------------------------------------ */
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' https://www.youtube.com",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data:",
+  "media-src 'self' data:",
+  "font-src 'self' data:",
+  "connect-src 'self' ws: wss: https:",
+  "worker-src 'self' blob:",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'none'",
+  "frame-ancestors *",
+].join('; ');
+
+const PERMISSIONS = [
+  'accelerometer=()', 'camera=()', 'geolocation=()', 'gyroscope=()',
+  'magnetometer=()', 'microphone=()', 'payment=()', 'usb=()',
+  'interest-cohort=()',
+].join(', ');
+
+/** Applied to every response, static or API. */
+function securityHeaders(req) {
+  const h = {
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
+    'content-security-policy': CSP,
+    'permissions-policy': PERMISSIONS,
+    'cross-origin-resource-policy': 'cross-origin',
+  };
+  // Only meaningful once the connection is already HTTPS; behind a proxy that
+  // is what x-forwarded-proto tells us.
+  const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
+  if (proto === 'https') h['strict-transport-security'] = 'max-age=31536000; includeSubDomains';
+  return h;
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -203,6 +257,7 @@ const server = http.createServer((req, res) => {
      cross-origin. Only the read and submit routes are opened up; nothing here
      is authenticated or carries cookies, so `*` is the right allowance. */
   if (url.startsWith('/api/')) {
+    for (const [k, v] of Object.entries(securityHeaders(req))) res.setHeader(k, v);
     res.setHeader('access-control-allow-origin', '*');
     res.setHeader('vary', 'origin');
     if (req.method === 'OPTIONS') {
@@ -295,8 +350,7 @@ const server = http.createServer((req, res) => {
         'cache-control': DEV
           ? 'no-store, no-cache, must-revalidate'
           : (ext === '.html' ? 'public, max-age=0, must-revalidate' : 'public, max-age=3600'),
-        'referrer-policy': 'no-referrer',
-        'x-content-type-options': 'nosniff',
+        ...securityHeaders(req),
       });
       res.end(req.method === 'HEAD' ? undefined : body);
     });
@@ -402,6 +456,14 @@ attach(server, '/ws', (conn) => {
   if (clients.size >= MAX_CLIENTS) {
     try { conn.send(JSON.stringify({ t: 'err', m: 'server full' })); } catch (_) {}
     conn.close(1013);
+    return;
+  }
+  let sameIp = 0;
+  for (const other of clients.values()) if (other.conn.ip === conn.ip) sameIp++;
+  if (sameIp >= MAX_PER_IP) {
+    try { conn.send(JSON.stringify({ t: 'err', m: 'too many connections' })); } catch (_) {}
+    conn.close(1013);
+    log('rejected', conn.ip, '- ' + sameIp + ' connections already');
     return;
   }
   const id = nextId++;
