@@ -15,6 +15,9 @@ import * as m4 from './m4.js';
 /** global detail multiplier, lowered on weak devices */
 export let DETAIL = 1;
 export function setDetail(d) { DETAIL = d; }
+/** Read the live value. `import { DETAIL }` copies it once - the bundler
+    rewrites imports into a destructure - so callers must use this. */
+export const getDetail = () => DETAIL;
 const seg = (n) => Math.max(4, Math.round(n * DETAIL));
 
 /* ------------------------------------------------------------

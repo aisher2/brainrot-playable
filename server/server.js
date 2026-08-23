@@ -19,6 +19,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
 const crypto = require('crypto');
 const { attach } = require('./ws');
 
@@ -46,6 +47,10 @@ const ROOM_TTL_MS = 15 * 60 * 1000;
 /* ------------------------------------------------------------
    static files
    ------------------------------------------------------------ */
+/** text formats worth compressing; images and fonts are already packed */
+const GZIP_EXT = new Set(['.html', '.js', '.mjs', '.css', '.json', '.svg', '.txt', '.map', '.ico']);
+const gzipCache = new Map();
+
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -260,8 +265,31 @@ const server = http.createServer((req, res) => {
     fs.readFile(file, (err2, data) => {
       if (err2) { res.writeHead(404, { 'content-type': 'text/plain' }); res.end('404'); return; }
       const ext = path.extname(file).toLowerCase();
+
+      /* Compress text assets. The bundle is ~370 kB raw and ~108 kB gzipped,
+         which is the difference between a snappy and a sluggish first load on
+         a phone. A CDN in front may already do this; when nothing does, this
+         is the only thing that will. Results are cached, so each file is
+         compressed once per process rather than per request. */
+      const wantsGzip = /\bgzip\b/.test(req.headers['accept-encoding'] || '');
+      let body = data;
+      let encoding = null;
+      if (wantsGzip && GZIP_EXT.has(ext) && data.length > 1024) {
+        const key = file + ':' + (st ? st.mtimeMs : 0) + ':' + data.length;
+        let hit = gzipCache.get(key);
+        if (!hit) {
+          hit = zlib.gzipSync(data, { level: 6 });
+          if (gzipCache.size > 64) gzipCache.clear();
+          gzipCache.set(key, hit);
+        }
+        // never ship a "compressed" copy that is bigger than the original
+        if (hit.length < data.length) { body = hit; encoding = 'gzip'; }
+      }
+
       res.writeHead(200, {
         'content-type': MIME[ext] || 'application/octet-stream',
+        ...(encoding ? { 'content-encoding': encoding, vary: 'accept-encoding' } : {}),
+        'content-length': body.length,
         // dev never caches (so edits show up); production caches assets for an
         // hour and always revalidates the HTML that points at them.
         'cache-control': DEV
@@ -270,7 +298,7 @@ const server = http.createServer((req, res) => {
         'referrer-policy': 'no-referrer',
         'x-content-type-options': 'nosniff',
       });
-      res.end(req.method === 'HEAD' ? undefined : data);
+      res.end(req.method === 'HEAD' ? undefined : body);
     });
   });
 });

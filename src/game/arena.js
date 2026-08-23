@@ -10,7 +10,7 @@
    client always agree about the floor.
    ============================================================ */
 
-import { MeshData, addPart } from '../gfx/mesh.js';
+import { MeshData, addPart, getDetail } from '../gfx/mesh.js';
 import { Mesh } from '../gfx/gl.js';
 import { TAU, clamp } from '../core/util.js';
 import { MAPS, BASE_DIMS, BASE_COLORS, mapForSeed } from './maps.js';
@@ -187,14 +187,31 @@ const P = (shape, pos, scale, color, extra) => ({
 
 const C = { ...BASE_COLORS };
 
+const meshCache = new Map();
+
+/**
+ * Build (or reuse) the mesh set for whichever map is currently loaded.
+ * Keyed by map and detail level: a phone that drops detail mid-session gets
+ * a fresh bake, everyone else pays for each arena once.
+ */
 export function buildArenaMesh(gl) {
+  const key = currentMapIndex() + '|' + getDetail();
+  const hit = meshCache.get(key);
+  if (hit) return hit;
+  const built = bakeArenaMesh(gl);
+  meshCache.set(key, built);
+  return built;
+}
+
+function bakeArenaMesh(gl) {
   const md = new MeshData();
 
   /* --- backdrop: an endless dark floor, so looking past the wall shows a
          world instead of a black void; and a base slab under the tiles so
          the seams read as grout rather than holes --- */
   addPart(md, P('disc', [0, -2.4, 0], [90, 1, 90], '#241040'));
-  for (let k = 0; k < 3; k++) {
+  const rings = getDetail() < 0.75 ? 1 : 3;
+  for (let k = 0; k < rings; k++) {
     const rr = A.HALF + 6 + k * 9;
     addPart(md, P('torus', [0, -2.3 + k * 0.02, 0], [rr, 0.9, rr], k % 2 ? '#2c1450' : '#331a5c'));
   }
@@ -202,7 +219,9 @@ export function buildArenaMesh(gl) {
   addPart(md, P('box', [0, -0.62, 0], [A.HALF + 0.4, 0.35, A.HALF + 0.4], '#2f1750'));
 
   /* --- floor: tile grid, cheap and gives a real sense of speed --- */
-  const TS = 2.5;
+  // The floor grid is the bulk of this mesh. On a phone the checkerboard
+  // reads fine at half the density and bakes in a fraction of the time.
+  const TS = getDetail() < 0.75 ? 4.5 : 2.5;
   const N = Math.ceil(A.HALF / TS);
   for (let ix = -N; ix < N; ix++) {
     for (let iz = -N; iz < N; iz++) {

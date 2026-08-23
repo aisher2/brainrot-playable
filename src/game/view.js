@@ -156,10 +156,9 @@ export class GameView {
    * between maps all session does not leak them.
    */
   rebuildArena() {
+    // buildArenaMesh caches per map, so these meshes are shared - disposing
+    // them here would free buffers another match still points at.
     const built = buildArenaMesh(this.renderer.gl);
-    this.arena?.dispose?.();
-    this.moverMesh?.dispose?.();
-    this.hazardMesh?.dispose?.();
     this.arena = built.mesh;
     this.moverMesh = built.moverMesh;
     this.hazardMesh = built.hazardMesh;

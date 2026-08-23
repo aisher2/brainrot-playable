@@ -424,6 +424,13 @@ async function startMatch(mode, opts = {}) {
   }
   offQueued(); offWaiting();
 
+  // Bake the arena before the opponent-found pause rather than after it: the
+  // work then overlaps a wait the player is already sitting through, instead
+  // of adding a visible hitch on a phone right as the round starts.
+  const map = setArena(mapForSeed(info.seed));
+  if (map) app.view.rebuildArena();
+  app.map = currentMap();
+
   ui.showOpponentFound(info.opp);
   await wait(950);
 
@@ -432,13 +439,6 @@ async function startMatch(mode, opts = {}) {
     if (app.stealTap) { inp.dash = true; app.stealTap = false; }
     return inp;
   };
-  // The arena comes from the shared match seed, so both clients load the
-  // same one and it never has to go over the wire. Must happen before the
-  // sim is created - the simulation reads the arena tables directly.
-  const map = setArena(mapForSeed(info.seed));
-  if (map) app.view.rebuildArena();
-  app.map = currentMap();
-
   const { session, bot } = createSession(info, readInput);
   app.session = session;
   app.bot = bot;
