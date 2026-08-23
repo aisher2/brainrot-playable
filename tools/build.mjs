@@ -36,7 +36,10 @@ const flag = (name, def = '') => {
  *   'wss://...'       a relay on a different host
  *   'off'             no multiplayer at all; only the PRACTICE button works
  */
-const RELAY_RAW = flag('relay', 'auto');
+/* Env wins over the flag: some hosts (Render) let you set environment
+   variables through their API but not edit the stored build command, so this
+   is the only way to retune a running deployment without a dashboard visit. */
+const RELAY_RAW = process.env.STB_RELAY || flag('relay', 'auto');
 const RELAY = RELAY_RAW === 'off' ? '' : RELAY_RAW;
 /**
  * Where the world leaderboard lives.
@@ -44,7 +47,7 @@ const RELAY = RELAY_RAW === 'off' ? '' : RELAY_RAW;
  *   'https://...'     a leaderboard API on a different host
  *   'off'             no world board; LEADERBOARD shows this device's own scores
  */
-const BOARD_RAW = flag('leaderboard', 'auto');
+const BOARD_RAW = process.env.STB_LEADERBOARD || flag('leaderboard', 'auto');
 const BOARD = BOARD_RAW === 'off' ? '' : BOARD_RAW;
 /** include the YouTube Playables SDK <script> (only meaningful inside their host) */
 const PLAYABLES = argv.includes('--playables');
