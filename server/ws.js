@@ -189,6 +189,7 @@ function attach(server, path, onConn) {
       'HTTP/1.1 101 Switching Protocols\r\n' +
       'Upgrade: websocket\r\n' +
       'Connection: Upgrade\r\n' +
+      'X-Brainrot-Relay: 1\r\n' +
       `Sec-WebSocket-Accept: ${accept}\r\n\r\n`
     );
     const conn = new WSConnection(socket, req);
