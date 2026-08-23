@@ -9,6 +9,7 @@
    ============================================================ */
 
 import net from 'node:net';
+import tls from 'node:tls';
 import crypto from 'node:crypto';
 
 const GUID = '258EAFA5-E914-47DA-95CA-5AB0DC85B11F';
@@ -29,7 +30,11 @@ export class NodeWebSocket {
     const expect = crypto.createHash('sha1').update(key + GUID).digest('base64');
     let handshook = false;
 
-    this.sock = net.connect(Number(u.port) || 80, u.hostname, () => {
+    // wss:// needs TLS, and hosts like Render route by SNI - without
+    // servername the handshake lands on the wrong vhost.
+    const secure = u.protocol === 'wss:';
+    const port = Number(u.port) || (secure ? 443 : 80);
+    const onReady = () => {
       this.sock.write(
         `GET ${u.pathname || '/'} HTTP/1.1\r\n` +
         `Host: ${u.host}\r\n` +
@@ -38,7 +43,11 @@ export class NodeWebSocket {
         `Sec-WebSocket-Key: ${key}\r\n` +
         'Sec-WebSocket-Version: 13\r\n\r\n'
       );
-    });
+    };
+    this.sock = secure
+      ? tls.connect({ host: u.hostname, port, servername: u.hostname,
+        ALPNProtocols: ['http/1.1'] }, onReady)
+      : net.connect(port, u.hostname, onReady);
     this.sock.setNoDelay(true);
 
     this.sock.on('data', (chunk) => {
