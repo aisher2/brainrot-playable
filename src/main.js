@@ -249,7 +249,6 @@ function wireUI() {
 
   ui.on('cancelFriend', () => app.mm.cancel());
   ui.on('cancel', () => { app.mm.cancel(); backToMenu(); });
-  ui.on('quit', () => { endSession(); backToMenu(); });
   ui.on('home', () => backToMenu());
   ui.on('again', () => startMatch(app.matchMode));
   ui.on('loadout', () => { /* preview refreshes itself */ });

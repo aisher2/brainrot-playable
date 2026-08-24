@@ -18,6 +18,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import crypto from 'node:crypto';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const SRC = path.join(ROOT, 'src');
@@ -234,13 +235,32 @@ if (PLAYABLES) {
   // so it stays opt-in and a plain web deploy makes zero external requests.
   html = html.replace('</head>', '<script src="https://www.youtube.com/game_api/v1"></script>\n</head>');
 }
-fs.writeFileSync(path.join(DIST, 'index.html'), html);
-
 const css = fs.readFileSync(path.join(ROOT, 'styles.css'), 'utf8')
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/\n{2,}/g, '\n')
   .replace(/^\s+/gm, '');
 fs.writeFileSync(path.join(DIST, 'styles.css'), css);
+
+/* Stamp the asset URLs with a content hash.
+
+   index.html revalidates on every load but bundle.js and styles.css are sent
+   with a long max-age, so without this a returning player keeps yesterday's
+   script for an hour - and pairs it with today's freshly revalidated markup.
+   A mismatched pair is worse than a merely stale one: the two files are built
+   against each other. The hash changes only when the bytes do, so caches stay
+   useful and a deploy is picked up on the next load instead of an hour later.
+
+   The standalone build inlines both files, so it keeps the unstamped html. */
+const stamp = (buf) => crypto.createHash('sha256').update(buf).digest('hex').slice(0, 8);
+const hashed = html
+  .replace('<script src="bundle.js" defer></script>',
+           `<script src="bundle.js?v=${stamp(bundle)}" defer></script>`)
+  .replace('<link rel="stylesheet" href="styles.css">',
+           `<link rel="stylesheet" href="styles.css?v=${stamp(css)}">`);
+if (hashed === html) fail('could not stamp the asset urls in index.html');
+fs.writeFileSync(path.join(DIST, 'index.html'), hashed);
+
+
 
 /* ------------------------------------------------------------
    4. verify + report

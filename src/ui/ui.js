@@ -2,7 +2,7 @@
    ui.js - every screen, the HUD, and the glue to the profile.
 
    Emits intents ('play', 'practice', 'again', 'home', 'cancel',
-   'quit', 'emote', 'setting') and never touches the game directly.
+   'emote', 'setting') and never touches the game directly.
    ============================================================ */
 
 import { Emitter, clamp01, fmtTime, pad2 } from '../core/util.js';
@@ -265,7 +265,6 @@ export class UI extends Emitter {
     }
     click('btnAgain', () => this.emit('again'));
     click('btnHome', () => this.emit('home'));
-    click('btnQuit', () => this.emit('quit'));
     click('btnMute', () => this._toggleMute());
 
     for (const b of document.querySelectorAll('.sheet-head .back')) {
