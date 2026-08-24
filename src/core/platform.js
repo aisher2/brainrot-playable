@@ -42,9 +42,17 @@ export const CONFIG = {
 /* ============================================================
    YouTube Playables SDK adapter
    ============================================================ */
-const sdk = (() => {
+/* Resolved on every access instead of captured once.
+
+   The SDK script installs a loader that can re-import a different build from
+   flags on its own URL - which is how the certification harness swaps in an
+   instrumented copy of itself. That replaces window.ytgame after our bundle
+   has already evaluated, so a reference grabbed at module scope would point
+   at an object nobody is listening to: our calls would appear to succeed
+   while landing somewhere the host never sees. */
+function getSdk() {
   try { return globalThis.ytgame || null; } catch (_) { return null; }
-})();
+}
 
 let firstFrameSent = false;
 let readySent = false;
@@ -55,10 +63,11 @@ function safe(fn, label) {
 
 export const yt = {
   /** true when running inside the Playables host */
-  get available() { return !!sdk; },
+  get available() { return !!getSdk(); },
 
   /** The loading screen is painted. Must come before gameReady(). */
   firstFrameReady() {
+    const sdk = getSdk();
     if (!sdk || firstFrameSent) return;
     firstFrameSent = true;
     safe(() => sdk.game?.firstFrameReady?.(), 'firstFrameReady');
@@ -66,6 +75,7 @@ export const yt = {
 
   /** The player can interact. Call once, after boot completes. */
   gameReady() {
+    const sdk = getSdk();
     if (!sdk || readySent) return;
     if (!firstFrameSent) this.firstFrameReady();
     readySent = true;
@@ -73,17 +83,19 @@ export const yt = {
   },
 
   /** YouTube asks the game to suspend / resume. */
-  onPause(fn) { if (sdk) safe(() => sdk.system?.onPause?.(fn), 'onPause'); },
-  onResume(fn) { if (sdk) safe(() => sdk.system?.onResume?.(fn), 'onResume'); },
+  onPause(fn) { const s = getSdk(); if (s) safe(() => s.system?.onPause?.(fn), 'onPause'); },
+  onResume(fn) { const s = getSdk(); if (s) safe(() => s.system?.onResume?.(fn), 'onResume'); },
 
   /** Audio must follow YouTube's mute state, not just our own setting. */
   audioEnabled() {
+    const sdk = getSdk();
     if (!sdk) return true;
     const v = safe(() => sdk.system?.isAudioEnabled?.(), 'isAudioEnabled');
     return v === undefined ? true : !!v;
   },
   onAudioEnabledChange(fn) {
-    if (sdk) safe(() => sdk.system?.onAudioEnabledChange?.(fn), 'onAudioEnabledChange');
+    const s = getSdk();
+    if (s) safe(() => s.system?.onAudioEnabledChange?.(fn), 'onAudioEnabledChange');
   },
 
   /**
@@ -95,6 +107,7 @@ export const yt = {
    * rather than sent as 0, since a fake score is worse than no score.
    */
   sendScore(value) {
+    const sdk = getSdk();
     if (!sdk) return;
     if (typeof value !== 'number' || !Number.isFinite(value)) return;
     const v = Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, Math.round(value)));
@@ -103,7 +116,30 @@ export const yt = {
 
   /** Surface a fatal error to the host so it can report it. */
   logError(err) {
+    const sdk = getSdk();
     if (!sdk) return;
     safe(() => sdk.game?.logError?.(String(err && err.message || err)), 'logError');
   },
 };
+
+/**
+ * Resolve once the SDK object is present.
+ *
+ * The script is synchronous and sits above our bundle, so in the host this is
+ * already true on the first check. It matters for the harness, which can
+ * replace the SDK while the page is still coming up, and it costs a plain web
+ * deploy nothing: with no SDK at all the wait gives up quickly and the game
+ * boots exactly as before.
+ */
+export function sdkReady(timeoutMs = 3000) {
+  if (getSdk()) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const t0 = Date.now();
+    const tick = () => {
+      if (getSdk()) return resolve(true);
+      if (Date.now() - t0 >= timeoutMs) return resolve(false);
+      setTimeout(tick, 30);
+    };
+    tick();
+  });
+}

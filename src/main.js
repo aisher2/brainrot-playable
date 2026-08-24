@@ -23,7 +23,7 @@ import { SoloSession, makeOpponent } from './game/solo.js';
 import { setArena, mapForSeed, currentMap } from './game/arena.js';
 import { levelById, starsEarned, goalText } from './data/levels.js';
 import { CFG, DT, EVENTS, ABILITIES } from './game/sim.js';
-import { CONFIG, yt } from './core/platform.js';
+import { CONFIG, yt, sdkReady } from './core/platform.js';
 import { submitScore } from './game/scores.js';
 import { matchRewards } from './data/progression.js';
 import { matchBrainrot, rollBrainrot, BRAINROT_BY_ID } from './data/brainrots.js';
@@ -694,4 +694,16 @@ function governQuality(dt) {
 addEventListener('error', (e) => console.error('[uncaught]', e.error || e.message));
 addEventListener('unhandledrejection', (e) => console.error('[unhandled]', e.reason));
 
-boot().catch((e) => fatal('Something broke while loading.', e));
+/* Certification requires the SDK to be loaded before any game code, and the
+   guidance is to hold game instantiation until both the document and the SDK
+   are up rather than assuming a synchronous script tag settled it. The tag
+   order already guarantees it inside the host; this covers the harness, which
+   can still be swapping its instrumented SDK in as the page comes up. With no
+   SDK present the wait gives up quickly, so a plain web host boots as before. */
+(async () => {
+  if (document.readyState === 'loading') {
+    await new Promise((r) => addEventListener('DOMContentLoaded', r, { once: true }));
+  }
+  await sdkReady();
+  return boot();
+})().catch((e) => fatal('Something broke while loading.', e));
