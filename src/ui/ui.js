@@ -455,9 +455,10 @@ export class UI extends Emitter {
     const me = $('mmMeName'); if (me) me.textContent = displayName();
     const av = $('mmMeAv');
     if (av) av.textContent = FACE_EMOJI[profile.loadout.face] || '🙂';
-    this.setSearchSub(mode === 'practice'
-      ? 'practice mode - offline bot opponent'
-      : 'connecting to the brainrot network');
+    /* Offline, this is the only mode there is, so calling it practice against
+       an "offline bot opponent" both labels the main event as a lesser one and
+       spoils the reveal the opponent card is about to make. */
+    this.setSearchSub(mode === 'practice' ? '' : 'connecting to the brainrot network');
   }
 
   setSearchSub(text) {
@@ -496,7 +497,13 @@ export class UI extends Emitter {
     if (fa) fa.textContent = opp?.loadout ? (FACE_EMOJI[opp.loadout.face] || '😈') : '😈';
     const fn = $('mmFoeName');
     if (fn) fn.textContent = (opp?.name || 'OPPONENT').slice(0, 12);
-    this.setSearchSub(opp?.isBot ? 'PRACTICE BOT - not a real player' : 'level ' + (opp?.level || 1));
+    /* Naming the bot matters only where a real opponent was an option: on the
+       online build you chose PRACTICE over a live match and deserve telling.
+       In a build with no relay there is nothing to mistake it for, so the
+       opponent is introduced the same way a person would be. */
+    this.setSearchSub(opp?.isBot && this.onlineAvailable
+      ? 'PRACTICE BOT - not a real player'
+      : 'level ' + (opp?.level || 1));
     sfx.matched();
   }
 
