@@ -10,6 +10,7 @@
     "check": "node tools/check.mjs",
     "netcheck": "node tools/netcheck.mjs",
     "build": "node tools/build.mjs",
+    "build:playables": "node tools/build.mjs --playables --single --relay= --leaderboard=",
     "serve:dist": "node server/server.js --root dist",
     "playcheck": "node tools/playcheck.mjs",
     "servercheck": "node tools/servercheck.mjs",

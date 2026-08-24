@@ -40,6 +40,7 @@ export class Input {
     const kd = (e) => {
       const a = KEY_MAP[e.code];
       if (!a) return;
+      this.setTouchMode(false);
       if (e.repeat) { e.preventDefault(); return; }
       this.keys[a] = true;
       if (LATCHED.includes(a)) this.latch[a] = true;
@@ -59,16 +60,14 @@ export class Input {
       this.stick.active = false; this.stick.id = -1; this._nub(0, 0);
     });
 
-    // mouse: click anywhere in the play area = ability / taunt
-    addEventListener('pointerdown', (e) => {
-      if (!this.enabled || this.touchMode) return;
-      if (e.pointerType !== 'mouse') return;
-      if (e.target && e.target.closest && e.target.closest('button,input,.sheet,.panel')) return;
-      this.latch.taunt = true;
-    });
-
-    // first touch anywhere flips us into touch mode
-    addEventListener('touchstart', () => this.setTouchMode(true), { passive: true, once: true });
+    /* Playables certification: mouse MUST drive every interaction, while
+       keyboard is only a "should". The stick and the ability buttons are
+       bound with pointer events, which a mouse already satisfies - they were
+       simply hidden on any device that never reported a touch, which left a
+       mouse-only player unable to move or use an ability at all. So show the
+       controls for any pointer, and get out of the way the moment someone
+       reaches for the keyboard instead. */
+    addEventListener('pointerdown', () => this.setTouchMode(true));
     if (matchMedia('(pointer:coarse)').matches) this.setTouchMode(true);
 
     this._bindLook();
@@ -177,7 +176,8 @@ export class Input {
   setTouchMode(on) {
     if (this.touchMode === on) return;
     this.touchMode = on;
-    if (this.els.touchLayer) this.els.touchLayer.hidden = !on;
+    // must match setEnabled: the pad only exists during a match
+    if (this.els.touchLayer) this.els.touchLayer.hidden = !(on && this.enabled);
   }
 
   /** Enable during a match, disable in menus so keys don't get eaten. */

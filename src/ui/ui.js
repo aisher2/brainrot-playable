@@ -13,7 +13,7 @@ import {
 } from '../core/storage.js';
 import { BRAINROTS, RARITY, RARITY_ORDER, BRAINROT_BY_ID } from '../data/brainrots.js';
 import { SLOTS, findItem, unlockText } from '../data/cosmetics.js';
-import { msUntilMidnight, xpForLevel } from '../data/progression.js';
+import { msUntilMidnight, xpForLevel, MAX_LEVEL } from '../data/progression.js';
 import { fetchBoard } from '../net/leaderboard.js';
 import { CONFIG } from '../core/platform.js';
 import { sfx } from '../core/audio.js';
@@ -265,7 +265,6 @@ export class UI extends Emitter {
     }
     click('btnAgain', () => this.emit('again'));
     click('btnHome', () => this.emit('home'));
-    click('btnMute', () => this._toggleMute());
 
     for (const b of document.querySelectorAll('.sheet-head .back')) {
       b.addEventListener('click', (e) => { e.preventDefault(); this.back(); });
@@ -291,23 +290,9 @@ export class UI extends Emitter {
     store.on('xp', () => this._refreshLevel());
   }
 
-  _toggleMute() {
-    const on = !(getSetting('music') || getSetting('sfx'));
-    setSetting('music', on);
-    setSetting('sfx', on);
-    this.emit('setting', 'mute', !on);
-    this._refreshMute();
-  }
-
-  _refreshMute() {
-    const b = $('btnMute');
-    if (b) b.textContent = (getSetting('music') || getSetting('sfx')) ? '🔊' : '🔇';
-  }
-
   /* ==================================================== menu */
   renderMenu() {
     this._refreshLevel();
-    this._refreshMute();
     const q = $('questsLabel');
     if (q) {
       const pending = todaysChallenges().filter((c) => c.done).length;
@@ -364,7 +349,8 @@ export class UI extends Emitter {
 
   _refreshLevel() {
     const li = levelInfo();
-    const n = $('lvlNum'); if (n) n.textContent = li.level;
+    // same rule for the level track: 60 is the end of it, so say so
+    const n = $('lvlNum'); if (n) n.textContent = li.level >= MAX_LEVEL ? li.level + ' MAX' : li.level;
     const who = $('lvlWho'); if (who) who.textContent = displayName();
     const f = $('xpFill'); if (f) f.style.width = Math.round(li.pct * 100) + '%';
     this._refreshCoins();
@@ -776,7 +762,14 @@ export class UI extends Emitter {
       for (const r of RARITY_ORDER) mk(r, RARITY[r].name);
     }
     const count = $('collectCount');
-    if (count) count.textContent = collectedCount() + '/' + BRAINROTS.length;
+    /* Playables requires the game to say when there is nothing further to
+       unlock, rather than leaving a full bar to imply more is coming. */
+    if (count) {
+      const got = collectedCount();
+      count.textContent = got >= BRAINROTS.length
+        ? got + '/' + BRAINROTS.length + ' · ALL COLLECTED'
+        : got + '/' + BRAINROTS.length;
+    }
     this._fillCollection();
   }
 

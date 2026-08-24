@@ -38,7 +38,18 @@ canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;background
 .screen{
   position:fixed;inset:0;
   display:none;
-  flex-direction:column;align-items:center;justify-content:center;
+  flex-direction:column;align-items:center;
+  /* Playables certification requires the game to be playable at every aspect
+     ratio from 9:32 to 32:9. A centred column silently clips at both ends on
+     a short viewport - on a rotated phone PRACTICE VS BOT ended up below the
+     fold with no way to reach it. `safe center` keeps the column centred when
+     it fits and falls back to flex-start when it does not, so the overflow
+     lands at the bottom where the scroll can reach it. The plain `center`
+     first is the fallback for engines that do not know the `safe` keyword. */
+  justify-content:center;
+  justify-content:safe center;
+  overflow-y:auto;overflow-x:hidden;
+  -webkit-overflow-scrolling:touch;
   padding:calc(14px + var(--safe-t)) calc(14px + var(--safe-r)) calc(14px + var(--safe-b)) calc(14px + var(--safe-l));
   animation:scrIn .22s cubic-bezier(.2,1.4,.4,1);
 }
@@ -52,6 +63,7 @@ canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;background
    Wide screens dim the left (hero is on the right); tall screens dim the top
    (hero rises from the bottom). Either way the buttons stay legible. */
 #s-menu{isolation:isolate}
+#s-hud{overflow:hidden}
 #s-menu::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:-1;
   background:radial-gradient(ellipse 70% 58% at 34% 50%,rgba(12,3,22,.85),rgba(12,3,22,.45) 58%,transparent 80%)}
 @media (max-aspect-ratio: 5/4){
@@ -164,6 +176,26 @@ canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;background
   .logo.big{margin-bottom:8px}
   .tagline{margin-bottom:10px}
 }
+/* Landscape phones and ultra-wide: the column cannot fit at full size, so
+   compact it hard. It still scrolls if even this overflows. */
+@media (max-height:640px){
+  .logo .l1{font-size:clamp(17px,4vw,26px)}
+  .logo .l3{font-size:clamp(18px,4.4vw,29px)}
+  .logo .l2{font-size:clamp(10px,2.2vw,14px)}
+  .logo.big{margin-bottom:4px}
+  .tagline{display:none}
+  .btn.play{font-size:clamp(17px,3.6vw,23px);padding:4px 20px}
+  .btn.play small{font-size:9px}
+  /* icon beside the label instead of above it - halves each row's height,
+     which is what buys the column enough room to fit without scrolling */
+  .btn.small{min-height:32px;padding:3px 8px;font-size:10px;flex-direction:row;gap:6px}
+  .btn.small i{font-size:14px}
+  .btn.friend{min-height:38px;font-size:12px}
+  .btn.ghost{min-height:32px;font-size:11px}
+  .menu-btns{gap:5px;padding:8px;border-radius:16px}
+  .modeblurb{display:none}
+  #s-menu{padding-top:calc(46px + var(--safe-t));padding-bottom:calc(10px + var(--safe-b))}
+}
 
 .icon-btn{
   width:44px;height:44px;flex:0 0 44px;border-radius:14px;
@@ -174,6 +206,10 @@ canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;background
 
 /* ============ MENU CHROME ============ */
 .menu-top{position:absolute;top:calc(10px + var(--safe-t));left:calc(10px + var(--safe-l));right:calc(10px + var(--safe-r));display:flex;align-items:center;gap:10px}
+/* The mute button used to balance the settings gear. It was removed because a
+   speaker icon in the corner duplicates the platform's own mute control, so
+   this stands in its place and keeps the level chip centred. */
+.menu-top::before{content:'';flex:0 0 44px}
 .lvlchip{flex:0 1 190px;margin:0 auto;background:#0000005e;border:3px solid #ffffff2e;border-radius:14px;padding:6px 13px;display:flex;flex-direction:column;gap:5px;backdrop-filter:blur(3px)}
 .lvlchip b{font-size:12px;letter-spacing:.12em;color:#ffe9a8;display:flex;gap:7px;align-items:baseline}
 .lvlwho{flex:1;min-width:0;color:var(--white);opacity:.9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;letter-spacing:.06em}
@@ -600,10 +636,10 @@ canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;background
 @keyframes flashg{0%{opacity:.55;background:var(--gold)}100%{opacity:0;background:var(--gold)}}
 
 /* landscape phone: tighten vertical rhythm */
+/* Only the in-match controls here. The menu at this height is handled by the
+   max-height:560px block above - it is tighter, and repeating menu rules here
+   just overrode it, since both queries match and this one comes later. */
 @media (max-height:460px){
-  .logo .l1{font-size:clamp(26px,7vw,50px)} .logo .l3{font-size:clamp(28px,7.6vw,56px)} .logo .l2{font-size:14px}
-  .btn.play{font-size:26px;padding:9px 30px} .btn.small{min-height:50px}
-  .menu-btns{gap:7px} .tagline{margin-bottom:8px}
   .stick{width:104px;height:104px}
   .abtn{width:58px;height:58px} .abtn .ico{font-size:24px}
   .abtn.ult,.abtn.dashbtn{width:64px;height:64px}
