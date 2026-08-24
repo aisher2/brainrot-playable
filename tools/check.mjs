@@ -348,16 +348,22 @@ try {
     throw new Error('the Playables SDK script tag is missing');
   }
 
-  /* Certification requires the SDK to execute before any game code, and the
-     STB_CONFIG inline script counts as game code - it was running first and
-     failing the check while the SDK tag itself was present and correct. */
-  const firstScript = page.indexOf('<script');
-  const sdkAt = page.indexOf('game_api/v1');
-  if (page.lastIndexOf('<script', sdkAt) !== firstScript) {
-    throw new Error('the Playables SDK is not the first script in the document');
+  /* Certification requires the SDK to execute before any game code. The page
+     therefore carries exactly two scripts - the SDK, then the bundle - with
+     nothing inline between them. The config used to be an inline script here,
+     which is game code by any reading; it now rides inside the bundle. */
+  const scripts = [...page.matchAll(/<script[^>]*>/g)].map((m) => m[0]);
+  if (scripts.length !== 2) {
+    throw new Error(`expected exactly 2 script tags, found ${scripts.length}`);
   }
-  if (sdkAt > page.indexOf('STB_CONFIG')) {
-    throw new Error('STB_CONFIG runs before the Playables SDK');
+  if (!scripts[0].includes('game_api/v1')) {
+    throw new Error('the first script is not the Playables SDK');
+  }
+  if (!scripts[1].includes('bundle.js')) {
+    throw new Error('the second script is not the game bundle');
+  }
+  if (page.includes('STB_CONFIG')) {
+    throw new Error('STB_CONFIG is inline in the page; it belongs in the bundle');
   }
   console.log('  offline bundle has no network primitives; only the Playables SDK URL remains');
   ok++;

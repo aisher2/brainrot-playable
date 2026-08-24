@@ -187,7 +187,7 @@ for (const id of order) {
   const m = modules.get(id);
   body += `\n__def(${JSON.stringify(id)}, function (__x, __req) {\n${m.code}\n});\n`;
 }
-const bundle = RUNTIME + body + `\n  __req(${JSON.stringify(entryId)});\n})();\n`;
+let bundle = RUNTIME + body + `\n  __req(${JSON.stringify(entryId)});\n})();\n`;
 
 /* ------------------------------------------------------------
    3. write dist/
@@ -195,16 +195,22 @@ const bundle = RUNTIME + body + `\n  __req(${JSON.stringify(entryId)});\n})();\n
 fs.rmSync(DIST, { recursive: true, force: true });
 fs.mkdirSync(DIST, { recursive: true });
 
+bundle = 'globalThis.STB_CONFIG = { dev: false };\n' + bundle;
 fs.writeFileSync(path.join(DIST, 'bundle.js'), bundle);
 
 let html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 html = html.replace('<script type="module" src="src/main.js"></script>', '<script src="bundle.js" defer></script>');
 if (html.includes('src/main.js')) fail('could not rewrite the script tag in index.html');
 // bake in whichever relay the deploy wants
-const cfg = '<script>window.STB_CONFIG = { dev: false };</script>';
-const cfgRe = /<script>window\.STB_CONFIG[\s\S]*?<\/script>/;
+/* The config used to ship as an inline <script> in the head. Certification
+   requires the SDK to load before any game code, and an inline script that
+   sets the game's own config global is game code by any reading - even sitting
+   below the SDK tag it left the question open. It is prepended to the bundle
+   instead, so the document contains exactly two scripts: the SDK, then the
+   game. Nothing executes between them. */
+const cfgRe = /<script>window\.STB_CONFIG[\s\S]*?<\/script>\n?/;
 if (!cfgRe.test(html)) fail('could not find the STB_CONFIG block in index.html');
-html = html.replace(cfgRe, cfg);
+html = html.replace(cfgRe, '');
 
 html = html.replace(/\n\s*<!--[\s\S]*?-->/g, '');           // strip layout comments
 
@@ -213,8 +219,9 @@ html = html.replace(/\n\s*<!--[\s\S]*?-->/g, '');           // strip layout comm
    that. It goes immediately after <head>, ahead of the STB_CONFIG inline
    script, which counts as game code and was previously running first. */
 html = html.replace('<head>', '<head>\n<script src="https://www.youtube.com/game_api/v1"></script>');
-if (html.indexOf('game_api/v1') > html.indexOf('STB_CONFIG')) {
-  fail('the Playables SDK must come before the STB_CONFIG script');
+if (html.includes('STB_CONFIG')) fail('STB_CONFIG must not be inline in the page');
+if ((html.match(/<script/g) || []).length !== 2) {
+  fail('the page must contain exactly two scripts: the SDK and the bundle');
 }
 const css = fs.readFileSync(path.join(ROOT, 'styles.css'), 'utf8')
   .replace(/\/\*[\s\S]*?\*\//g, '')
