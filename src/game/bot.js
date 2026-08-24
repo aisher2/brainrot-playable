@@ -1,13 +1,13 @@
 /* ============================================================
-   bot.js - the PRACTICE-mode opponent.
+   bot.js - the opponent.
 
-   IMPORTANT: this is deliberately kept out of the online path.
-   Online matches only ever pair two real players; the bot exists so
-   the game is playable and testable with no server, and so the
-   netcode has something to talk to offline.
+   This used to live under net/ as the stand-in for a missing
+   second player. It is now the only opponent there is, so it sits
+   with the rest of the game: SoloSession steps it once per fixed
+   tick alongside the player's own input.
    ============================================================ */
 
-import { A, PILLARS } from '../game/arena.js';
+import { A, PILLARS } from './arena.js';
 import { RNG, clamp } from '../core/util.js';
 
 const PILLAR_CACHE = PILLARS;

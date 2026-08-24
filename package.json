@@ -5,21 +5,14 @@
   "description": "A 60-second 2-player brainrot-stealing brawl built for YouTube Playables.",
   "type": "commonjs",
   "scripts": {
-    "start": "node server/server.js",
-    "dev": "node server/server.js --dev",
-    "check": "node tools/check.mjs",
-    "netcheck": "node tools/netcheck.mjs",
+    "start": "node server/server.js --root dist",
     "build": "node tools/build.mjs",
-    "build:playables": "node tools/build.mjs --playables --single --relay= --leaderboard=",
-    "serve:dist": "node server/server.js --root dist",
-    "playcheck": "node tools/playcheck.mjs",
-    "servercheck": "node tools/servercheck.mjs",
-    "friendcheck": "node tools/friendcheck.mjs",
-    "checkall": "node tools/check.mjs && node tools/mapcheck.mjs && node tools/netcheck.mjs && node tools/servercheck.mjs && node tools/friendcheck.mjs && node tools/playcheck.mjs",
+    "build:single": "node tools/build.mjs --single",
+    "build:playables": "node tools/build.mjs",
+    "check": "node tools/check.mjs",
+    "solocheck": "node tools/solocheck.mjs",
     "mapcheck": "node tools/mapcheck.mjs",
-    "worker:dev": "wrangler dev --port 8787 --local",
-    "worker:deploy": "node tools/build.mjs --relay=auto --leaderboard=auto && wrangler deploy",
-    "workercheck": "node tools/workercheck.mjs"
+    "checkall": "node tools/build.mjs && node tools/check.mjs && node tools/mapcheck.mjs && node tools/solocheck.mjs"
   },
   "engines": {
     "node": ">=18"

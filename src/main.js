@@ -6,7 +6,7 @@
 
 import { Emitter, clamp, clamp01, RNG } from './core/util.js';
 import {
-  initStorage, profile, publicProfile, displayName, setName, addCoins, addXp,
+  initStorage, profile, displayName, setName, addCoins, addXp,
   applyMatchStats, recordResult, refreshUnlocks, collect, levelInfo,
   getSetting, setSetting, save, flush, storageBackend, store,
   levelStars, setLevelStars,
@@ -19,13 +19,12 @@ import {
 import { setDetail } from './gfx/mesh.js';
 import { Studio } from './gfx/studio.js';
 import { GameView } from './game/view.js';
-import { createSession, HostSession } from './game/match.js';
+import { SoloSession, makeOpponent } from './game/solo.js';
 import { setArena, mapForSeed, currentMap } from './game/arena.js';
 import { levelById, starsEarned, goalText } from './data/levels.js';
 import { CFG, DT, EVENTS, ABILITIES } from './game/sim.js';
-import { Matchmaker, CancelError } from './net/netclient.js';
-import { CONFIG, relayUrl, onlineEnabled, yt } from './core/platform.js';
-import { submitScore } from './net/leaderboard.js';
+import { CONFIG, yt } from './core/platform.js';
+import { submitScore } from './game/scores.js';
 import { matchRewards } from './data/progression.js';
 import { matchBrainrot, rollBrainrot, BRAINROT_BY_ID } from './data/brainrots.js';
 import { defaultLoadout } from './data/cosmetics.js';
@@ -33,7 +32,7 @@ import { UI } from './ui/ui.js';
 
 const app = {
   ui: null, view: null, input: null, studio: null, mm: null,
-  session: null, bot: null, mode: 'menu', matchMode: 'online',
+  session: null, mode: 'menu',
   raf: 0, last: 0, acc: 0, frameAvg: 16.7,
   quality: 1, qualityLock: false, qTimer: 0,
   lastCd: -99, slow: 1, ending: false, resultShown: false,
@@ -109,7 +108,6 @@ async function boot() {
     touchLayer: document.getElementById('touchLayer'),
   });
 
-  app.mm = new Matchmaker();
   wireUI();
 
   ui.setLoading(0.94, 'almost brainrotted');
@@ -139,16 +137,14 @@ async function boot() {
   /* The label under PLAY carries reachability now. The button label itself
      follows what this build is *configured* for, so a temporary outage never
      mislabels PLAY as a bot match it is not going to start. */
-  ui.setOnlineAvailable(onlineEnabled());
-  probeServer();
   startLoop();
   yt.gameReady();                // the player can interact now
 
-  if (CONFIG.autoPractice) startMatch('practice');
+  if (CONFIG.autoPractice) startMatch();
 
   if (CONFIG.dev) {
     console.info(`[steal-the-brainrot] save=${backend} detail=${detail.geo} ` +
-      `quality=${app.quality} online=${onlineEnabled() ? relayUrl() : 'off'}`);
+      `quality=${app.quality} offline build`);
   }
 }
 
@@ -195,71 +191,21 @@ function fatal(msg, err) {
 function wireUI() {
   const ui = app.ui;
 
-  // PLAY queues for a real player. Only a build with no relay at all falls
-  // through to practice, where it is the single way into a match.
-  ui.on('play', () => startMatch(onlineEnabled() ? 'online' : 'practice'));
-  ui.on('practice', () => startMatch('practice', { variant: getSetting('variant') || 'classic' }));
+  // Every match is local, so PLAY simply starts one.
+  ui.on('play', () => startMatch({ variant: getSetting('variant') || 'classic' }));
   ui.on('level', (id) => {
     const lv = levelById(id);
-    if (lv) startMatch('practice', { variant: lv.variant, level: lv });
+    if (lv) startMatch({ variant: lv.variant, level: lv });
   });
-  // "the queue is empty, just let me play" - keeps a lone visitor from
-  // ever hitting a dead end on the search screen
-  ui.on('playSolo', () => { app.mm.cancel(); startMatch('practice'); });
-
-  /* ---- play with a friend: one side mints a code, the other redeems it ---- */
-  ui.on('makeRoom', async () => {
-    if (!relayUrl(getSetting('serverUrl'))) {
-      ui.setFriendError('This build has no multiplayer server configured.');
-      sfx.error();
-      return;
-    }
-    app.mm.cancel();
-    ui.setFriendBusy('opening a room...');
-    ui.setFriendPending(true);
-    const off = app.mm.on('roomCode', (code) => { ui.setFriendBusy(''); ui.setRoomCode(code); });
-    try {
-      await beginMatch({ mode: 'friend' });
-    } catch (e) {
-      if (!(e instanceof CancelError)) {
-        ui.show('friend');
-        ui.setRoomCode('');
-        ui.setFriendError(app.mm.lastError || 'Could not open a room.');
-        sfx.error();
-      }
-    } finally { off(); ui.setFriendPending(false); }
-  });
-
-  ui.on('joinRoom', async (code) => {
-    if (!relayUrl(getSetting('serverUrl'))) {
-      ui.setFriendError('This build has no multiplayer server configured.');
-      sfx.error();
-      return;
-    }
-    app.mm.cancel();
-    ui.setFriendBusy('joining room ' + code + '...');
-    ui.setFriendPending(true);
-    try {
-      await beginMatch({ mode: 'friend', code });
-    } catch (e) {
-      if (!(e instanceof CancelError)) {
-        ui.show('friend');
-        ui.setFriendError(app.mm.lastError || 'Could not join that room.');
-        sfx.error();
-      }
-    } finally { ui.setFriendPending(false); }
-  });
-
   ui.on('nameChosen', (n) => {
     if (n) setName(n);
     sfx.ui();
     ui.show('menu');
   });
 
-  ui.on('cancelFriend', () => app.mm.cancel());
-  ui.on('cancel', () => { app.mm.cancel(); backToMenu(); });
+  ui.on('cancel', () => backToMenu());
   ui.on('home', () => backToMenu());
-  ui.on('again', () => startMatch(app.matchMode));
+  ui.on('again', () => startMatch({ variant: app.session?.variant || getSetting('variant') || 'classic' }));
   ui.on('loadout', () => { /* preview refreshes itself */ });
 
   // "🦵 YEET KICK — READY" the instant it comes off cooldown
@@ -293,15 +239,7 @@ function wireUI() {
       if (q != null) { app.quality = q; app.view?.setQuality(q); }
     }
     if (k === 'camSens') app.view?.setCamSensitivity(v);
-    if (k === 'serverUrl') probeServer();
     if (k === 'music' || k === 'sfx' || k === 'mute') applyHostAudio();
-  });
-
-  ui.on('testServer', async () => {
-    ui.setConnResult('testing...');
-    const r = await app.mm.probe(getSetting('serverUrl'));
-    ui.setConnResult(r.ok ? 'relay reachable ✓' : `unreachable — practice mode still works`);
-    probeServer();
   });
 
   ui.on('resetProgress', async () => {
@@ -359,118 +297,53 @@ function applyHostAudio() {
   setSfxEnabled(ok && getSetting('sfx'));
 }
 
-/**
- * Only touch the network when a relay is actually configured. On a plain
- * static host CONFIG.relay is '', so the game never opens a socket - which
- * is what keeps the console clean for a reviewer opening the page cold.
- */
-async function probeServer() {
-  const ui = app.ui;
-  const url = relayUrl(getSetting('serverUrl'));
-  if (!url) {
-    ui.setOnlineAvailable(false);
-    ui.setPlaySub('1v1 · 60 seconds');
-    return;
-  }
-  ui.setPlaySub('online · 1v1 · 60s');
-  const r = await app.mm.probe(url, 2500);
-  ui.setPlaySub(r.ok ? 'online · 1v1 · 60s' : 'server unreachable');
-  ui.setOnlineAvailable(onlineEnabled());
-}
 
 /* ============================================================
    MATCH LIFECYCLE
    ============================================================ */
-/** startMatch, but for the friend-room flow, which owns its own screen. */
-async function beginMatch(opts) {
-  return startMatch(opts.mode, opts);
-}
-
-async function startMatch(mode, opts = {}) {
+async function startMatch(opts = {}) {
   endSession();
   app.level = opts.level || null;
-  app.matchMode = mode === 'friend' ? 'online' : mode;
   app.ending = false;
   app.resultShown = false;
   app.slow = 1;
   app.lastCd = -99;
 
   const ui = app.ui;
-  // a friend room keeps its own screen until the code is in play
-  if (mode !== 'friend' || opts.code) ui.showSearch(mode === 'friend' ? 'online' : mode);
-  if (mode === 'friend' && opts.code) {
-    ui.setSearchSub('joining room ' + opts.code);
-    const t = document.getElementById('searchTitle');
-    if (t) t.textContent = 'JOINING YOUR FRIEND...';
-  }
+  const variant = opts.variant || getSetting('variant') || 'classic';
+  const seed = (opts.seed ?? ((Math.random() * 0xffffffff) >>> 0)) >>> 0;
+  const opp = makeOpponent(seed);
+  const info = { idx: 0, seed, opp, variant };
 
-  // PLAY means a real opponent. If this deployment has no relay there is
-  // nothing to queue for, so say so plainly rather than quietly swapping in
-  // a bot the player did not ask for.
-  // live queue feedback while we wait for a second human
-  const offQueued = app.mm.on('queued', (n) => {
-    ui.setSearchSub(n > 1 ? `you are #${n} in the queue` : 'waiting for another player to hit PLAY');
-  });
-  const offWaiting = app.mm.on('waiting', (secs) => {
-    ui.setSearchWait(secs);
-  });
+  /* There is nobody to wait for, but the opponent card is still worth its
+     beat - it is how you learn who you drew. What used to be a queue is now
+     just that reveal, kept short. */
+  ui.showSearch();
+  ui.showOpponentFound(opp);
 
-  let info;
-  try {
-    info = await app.mm.find({
-      mode,
-      code: opts.code,
-      variant: opts.variant || getSetting('variant') || 'classic',
-      serverUrl: relayUrl(getSetting('serverUrl')),
-      profile: publicProfile(),
-      difficulty: opts.level ? opts.level.diff : pickDifficulty(),
-      humanHost: new URLSearchParams(location.search).get('role') !== 'client',
-      lagMs: Number(new URLSearchParams(location.search).get('lag')) || 0,
-    });
-  } catch (e) {
-    offQueued(); offWaiting();
-    // The friend room owns its own screen and its own error line. Reporting
-    // into the search screen here would write the failure somewhere the
-    // player cannot see, so hand it back to the caller instead.
-    if (mode === 'friend') throw e;
-    if (e instanceof CancelError) { backToMenu(); return; }
-    // Could not reach the relay. Do not strand the player on a dead screen -
-    // say what happened and offer the bot as a clearly separate choice.
-    sfx.error();
-    const t = document.getElementById('searchTitle');
-    if (t) t.textContent = "CAN'T REACH THE SERVER";
-    ui.setSearchSub(app.mm.lastError || 'the matchmaking server did not answer');
-    ui.showSoloOffer('practise against a bot instead');
-    probeServer();
-    return;
-  }
-  offQueued(); offWaiting();
-
-  // Bake the arena before the opponent-found pause rather than after it: the
-  // work then overlaps a wait the player is already sitting through, instead
-  // of adding a visible hitch on a phone right as the round starts.
-  /* A level pins its map: rolling one from the seed would make the same
-     level a different challenge on every attempt, and a 3-star run would
-     not mean the same thing twice. */
-  const map = setArena(opts.level ? opts.level.map : mapForSeed(info.seed));
+  /* Bake the arena during that beat rather than after it, so the work hides
+     inside a pause the player is already sitting through.
+     A level pins its map: rolling one from the seed would make the same level
+     a different challenge on every attempt, and a 3-star run would not mean
+     the same thing twice. */
+  const map = setArena(opts.level ? opts.level.map : mapForSeed(seed));
   if (map) app.view.rebuildArena();
   app.map = currentMap();
 
-  ui.showOpponentFound(info.opp);
-  await wait(600);   // a beat to read who you drew, not a loading screen
+  await wait(700);
 
-  const readInput = () => {
-    const inp = app.input.read();
-    return inp;
-  };
-  // practice plays whatever the menu says; online is told by the relay, which
-  // only ever pairs two people who chose the same mode
-  if (!info.variant) info.variant = opts.variant || getSetting('variant') || 'classic';
+  const readInput = () => app.input.read();
 
-  const { session, bot } = createSession(info, readInput);
+  const session = new SoloSession({
+    idx: info.idx,
+    seed,
+    opp,
+    variant,
+    difficulty: opts.level ? opts.level.diff : pickDifficulty(),
+    readInput,
+  });
   app.session = session;
-  app.bot = bot;
-  app.opp = info.opp;
+  app.opp = opp;
   app.localIdx = info.idx;
 
   const loadouts = [];
@@ -480,7 +353,7 @@ async function startMatch(mode, opts = {}) {
   loadouts[1 - info.idx] = { ...defaultLoadout(), ...(info.opp?.loadout || {}) };
   names[1 - info.idx] = (info.opp?.name || 'OPPONENT').slice(0, 12);
 
-  const brDef = matchBrainrot(info.seed);
+  const brDef = matchBrainrot(seed);
   app.view.setMatch({ localIdx: info.idx, loadouts, names, brainrotId: brDef.id });
   ui.setMapName(app.map.name, session.variant);
   ui.setBombMode(session.variant === 'tagbomb');
@@ -493,16 +366,14 @@ async function startMatch(mode, opts = {}) {
   ui.setTime(CFG.ROUND_TIME);
 
   session.on('ended', onRoundEnded);
-  session.on('peerLeft', onPeerLeft);
   session.on('emote', ({ who, id }) => { app.view.emote[who] = { id, t: 1.1 }; });
 
   ui.show('hud');
   app.view.showPlates(true);
   session.start();
-  bot?.start();
 
   setIntensity(0);
-  if (getSetting('music')) startMusic(info.seed);
+  if (getSetting('music')) startMusic(seed);
   ui.toastInfo(`Objective: ${brDef.name}`);
 }
 
@@ -514,7 +385,6 @@ function pickDifficulty() {
 }
 
 function endSession() {
-  if (app.bot) { app.bot.dispose(); app.bot = null; }
   if (app.session) { app.session.dispose(); app.session = null; }
   stopMusic(0.3);
   setIntensity(0);
@@ -527,18 +397,6 @@ function backToMenu() {
   if (getSetting('music') && app.hostAudioOk !== false) startMenuMusic();
 }
 
-function onPeerLeft() {
-  const s = app.session;
-  if (!s || s.finished) return;
-  app.ui.toast('OPPONENT LEFT!', 'info');
-  if (s instanceof HostSession) s.forfeit();
-  else {
-    s.sim.phase = 'over';
-    s.sim.phaseT = 0;
-    s.sim.winner = app.localIdx;
-    s._finish();
-  }
-}
 
 /* ============================================================
    ROUND END + REWARDS
@@ -787,7 +645,6 @@ function stepFrame(dt) {
     const gdt = dt * app.slow;
 
     app.session.update(gdt);
-    app.bot?.update(gdt);
     const fx = app.session.drainFx();
     if (fx.length) handleFx(fx, s);
     syncHud(s);

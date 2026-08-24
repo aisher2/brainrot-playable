@@ -82,7 +82,7 @@
     <div class="tagline">grab it &middot; hold it &middot; get bonked &middot; steal it back</div>
 
     <div class="menu-btns">
-      <button class="btn play" id="btnPlay"><span>PLAY</span><small id="playSub">online &middot; 1v1 &middot; 60s</small></button>
+      <button class="btn play" id="btnPlay"><span>PLAY</span><small id="playSub">1v1 &middot; 60 seconds</small></button>
       <div class="btn-row">
         <button class="btn small" id="btnBrainrots"><i>🧠</i><span>BRAINROTS</span></button>
         <button class="btn small" id="btnCustomize"><i>🎩</i><span>CUSTOMIZE</span></button>
@@ -92,14 +92,12 @@
         <button class="btn small" id="btnQuests"><i>🎯</i><span>QUESTS</span></button>
       </div>
       <button class="btn levels" id="btnLevels"><i>🏁</i><span>LEVELS</span><small id="levelsSub">12 stages</small></button>
-      <button class="btn friend" id="btnFriend"><i>🔗</i><span>PLAY WITH A FRIEND</span></button>
       <div class="modepick" id="modePick">
         <span>MODE</span>
         <button type="button" data-v="classic">🧠 CLASSIC</button>
         <button type="button" data-v="tagbomb">💣 TAG BOMB</button>
       </div>
       <div class="modeblurb" id="modeBlurb"></div>
-      <button class="btn ghost" id="btnPractice">PRACTICE VS BOT</button>
     </div>
 
   </section>
@@ -121,33 +119,6 @@
     </div>
   </section>
 
-  <section class="screen dim" id="s-friend">
-    <div class="panel pop friendpanel">
-      <h2>PLAY WITH A FRIEND</h2>
-      <p class="fsub">One of you creates a room, the other types the code.</p>
-
-      <button class="btn play" id="btnMakeRoom"><span>CREATE A ROOM</span><small>you get a 4-letter code</small></button>
-
-      <div class="codebox" id="codeBox" hidden>
-        <small>SHARE THIS CODE</small>
-        <b id="roomCode">----</b>
-        <span id="codeWait">waiting for your friend to join…</span>
-      </div>
-
-      <div class="orline"><i></i><span>OR</span><i></i></div>
-
-      <label class="joinrow">
-        <span>ENTER A CODE</span>
-        <input id="joinCode" maxlength="4" autocomplete="off" autocapitalize="characters"
-               spellcheck="false" placeholder="ABCD" inputmode="text">
-      </label>
-      <button class="btn play" id="btnJoinRoom"><span>JOIN</span></button>
-
-      <div class="ferr" id="friendErr"></div>
-      <button class="btn ghost" id="btnFriendBack">BACK</button>
-    </div>
-  </section>
-
   <!-- ---------- MATCHMAKING ---------- -->
   <section class="screen dim" id="s-search">
     <div class="search-wrap">
@@ -159,7 +130,6 @@
         <div class="vscard foe" id="mmFoeCard"><div class="av" id="mmFoeAv">?</div><b id="mmFoeName">...</b></div>
       </div>
       <div class="searchsub" id="searchSub">connecting to the brainrot network</div>
-      <button class="soloOffer" id="btnSoloOffer" hidden><span>PRACTISE VS BOT WHILE YOU WAIT</span><small>this is not a real opponent</small></button>
       <button class="btn ghost" id="btnCancelSearch">CANCEL</button>
     </div>
   </section>

@@ -27,60 +27,17 @@ const params = (() => {
 })();
 
 export const CONFIG = {
-  /**
-   * WebSocket relay for online 1v1.
-   *  ''      -> no online play; the game runs its offline mode only and
-   *             never attempts a connection (so: no console errors on a
-   *             plain static host).
-   *  'auto'  -> derive wss://<this page's host>/ws
-   *  'wss://...' -> use exactly this.
-   */
-  relay: typeof raw.relay === 'string' ? raw.relay.trim() : '',
-
-  /**
-   * Where the global leaderboard lives.
-   *  ''      -> local-only board stored in the browser
-   *  'auto'  -> https://<this page's host>/api   (server/server.js serves it)
-   *  'https://...' -> an explicit API base
-   */
-  leaderboard: typeof raw.leaderboard === 'string' ? raw.leaderboard.trim() : '',
-
-  /** Developer rows in Settings, FPS counter, ?dev=1 also turns this on. */
+  /** Developer rows in Settings; ?dev=1 also turns this on. */
   dev: raw.dev === true || params.get('dev') === '1',
 
-  /** Skip straight into a practice match - handy for review/QA links. */
+  /** Skip straight into a match - handy for review/QA links. */
   autoPractice: params.get('practice') === '1',
 };
 
-/** Resolve CONFIG.relay into a concrete URL, or '' when online is off. */
-export function relayUrl(override) {
-  const pick = (override && override.trim()) || CONFIG.relay;
-  if (!pick) return '';
-  if (pick !== 'auto') return pick;
-  try {
-    const loc = globalThis.location;
-    if (!loc || !loc.host) return '';
-    return (loc.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + loc.host + '/ws';
-  } catch (_) {
-    return '';
-  }
-}
-
-export const onlineEnabled = () => !!relayUrl();
-
-/** Resolve CONFIG.leaderboard into an API base, or '' when there is none. */
-export function leaderboardUrl(override) {
-  const pick = (override && override.trim()) || CONFIG.leaderboard;
-  if (!pick) return '';
-  if (pick !== 'auto') return pick.replace(/\/+$/, '');
-  try {
-    const loc = globalThis.location;
-    if (!loc || !loc.host) return '';
-    return loc.protocol + '//' + loc.host + '/api';
-  } catch (_) {
-    return '';
-  }
-}
+/* relayUrl(), onlineEnabled() and leaderboardUrl() used to live here. They
+   resolved CONFIG.relay and CONFIG.leaderboard into a socket and an API base.
+   Both are gone: the game has no server to reach, and a Playables build is
+   not allowed to reach one. Scores are kept in the saved profile instead. */
 
 /* ============================================================
    YouTube Playables SDK adapter

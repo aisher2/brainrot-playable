@@ -1,7 +1,7 @@
 /* ============================================================
    ui.js - every screen, the HUD, and the glue to the profile.
 
-   Emits intents ('play', 'practice', 'again', 'home', 'cancel',
+   Emits intents ('play', 'again', 'home', 'cancel',
    'emote', 'setting') and never touches the game directly.
    ============================================================ */
 
@@ -16,7 +16,7 @@ import { BRAINROTS, RARITY, RARITY_ORDER, BRAINROT_BY_ID } from '../data/brainro
 import { SLOTS, findItem, unlockText } from '../data/cosmetics.js';
 import { msUntilMidnight, xpForLevel, MAX_LEVEL } from '../data/progression.js';
 import { LEVELS, LEVEL_COUNT, goalText } from '../data/levels.js';
-import { fetchBoard } from '../net/leaderboard.js';
+import { fetchBoard } from '../game/scores.js';
 import { CONFIG } from '../core/platform.js';
 import { sfx } from '../core/audio.js';
 
@@ -79,7 +79,7 @@ const BOOT_TIPS = [
 
 const BOOT_FACES = ['🧠', '🍌', '👑', '🦵', '💨', '😵', '🤪', '🤯', '🥴'];
 
-const SCREENS = ['menu', 'name', 'friend', 'search', 'hud', 'result', 'collect', 'custom', 'board', 'quests', 'settings', 'levels'];
+const SCREENS = ['menu', 'name', 'search', 'hud', 'result', 'collect', 'custom', 'board', 'quests', 'settings', 'levels'];
 
 /** rAF, but with a timer fallback: background tabs stop firing rAF and
     thumbnails would then never appear. */
@@ -104,7 +104,6 @@ export class UI extends Emitter {
     this.toastCd = 0;
     this.lastScores = [0, 0];
     this.names = ['PLAYER 1', 'PLAYER 2'];
-    this.onlineAvailable = false;
     this._soloTimer = 0;
     this._searchBase = '';
     this._bind();
@@ -213,16 +212,13 @@ export class UI extends Emitter {
     };
 
     click('btnPlay', () => this.emit('play'));
-    click('btnPractice', () => this.emit('practice'));
     click('btnBrainrots', () => this.show('collect', { push: true }));
     click('btnCustomize', () => this.show('custom', { push: true }));
     click('btnBoard', () => this.show('board', { push: true }));
     click('btnQuests', () => this.show('quests', { push: true }));
     click('btnSettings', () => this.show('settings', { push: true }));
     click('btnCancelSearch', () => this.emit('cancel'));
-    click('btnSoloOffer', () => this.emit('playSolo'));
     click('btnLevels', () => this.show('levels', { push: true }));
-    click('btnFriend', () => this.showFriend());
     click('btnNameOk', () => this._confirmName());
     for (const b of document.querySelectorAll('#modePick button')) {
       b.addEventListener('click', () => {
@@ -250,22 +246,6 @@ export class UI extends Emitter {
         this.setNameError('');
       });
       pn.addEventListener('keydown', (e) => { if (e.code === 'Enter') this._confirmName(); });
-    }
-    click('btnFriendBack', () => { this.emit('cancelFriend'); this.show('menu'); });
-    click('btnMakeRoom', () => { this.setFriendError(''); this.emit('makeRoom'); });
-    click('btnJoinRoom', () => {
-      const code = ($('joinCode').value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-      if (code.length !== 4) { this.setFriendError('Codes are 4 characters.'); sfx.error(); return; }
-      this.setFriendError('');
-      this.emit('joinRoom', code);
-    });
-    const jc = $('joinCode');
-    if (jc) {
-      // codes are always upper case and never contain the ambiguous glyphs
-      jc.addEventListener('input', () => {
-        jc.value = jc.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
-      });
-      jc.addEventListener('keydown', (e) => { if (e.code === 'Enter') $('btnJoinRoom').click(); });
     }
     click('btnAgain', () => this.emit('again'));
     click('btnHome', () => this.emit('home'));
@@ -333,29 +313,6 @@ export class UI extends Emitter {
 
   setPlaySub(text) { const e = $('playSub'); if (e) e.textContent = text; }
 
-  /**
-   * With no relay configured there is nothing to queue for, so PLAY starts a
-   * solo match directly and the separate practice button would just be a
-   * confusing duplicate. Someone opening the page cold always gets one
-   * obvious button that starts a game.
-   */
-  setOnlineAvailable(on) {
-    this.onlineAvailable = !!on;
-    const prac = $('btnPractice');
-    const friend = $('btnFriend');
-    const label = document.querySelector('#btnPlay > span');
-    /* With a relay, PLAY means a real person and PRACTICE is the separate
-       opt-in, so both need naming. Without one there is no online mode to be
-       confused with - every match is the same match - and the primary button
-       is just PLAY. The opponent is named on screen the moment it starts. */
-    if (prac) prac.hidden = !on;
-    /* A friend room is a relay feature. With no relay the button opens a
-       screen that can never connect, so it is worse than absent - the offline
-       build leads with LEVELS instead. */
-    if (friend) friend.hidden = !on;
-    if (label) label.textContent = 'PLAY';
-  }
-
   _refreshLevel() {
     const li = levelInfo();
     // same rule for the level track: 60 is the end of it, so say so
@@ -395,59 +352,14 @@ export class UI extends Emitter {
     this.emit('nameChosen', v);
   }
 
-  /* ==================================================== play with a friend */
-  showFriend() {
-    this.show('friend');
-    this.setRoomCode('');
-    this.setFriendError('');
-    const jc = $('joinCode');
-    if (jc) jc.value = '';
-  }
-
-  /** '' hides the code panel; a code shows it and starts the wait */
-  setRoomCode(code) {
-    const box = $('codeBox');
-    if (!box) return;
-    box.hidden = !code;
-    if (code) {
-      $('roomCode').textContent = code;
-      $('codeWait').textContent = 'waiting for your friend to join...';
-      sfx.unlock();
-    }
-  }
-
-  setFriendError(msg) {
-    const e = $('friendErr');
-    if (e) { e.textContent = msg || ''; e.classList.remove('info'); }
-  }
-
-  /** neutral "working on it" line, so the button never looks like it did nothing */
-  setFriendBusy(msg) {
-    const e = $('friendErr');
-    if (e) { e.textContent = msg || ''; e.classList.toggle('info', !!msg); }
-  }
-
-  /** lock the two actions while one of them is in flight */
-  setFriendPending(on) {
-    for (const id of ['btnMakeRoom', 'btnJoinRoom']) {
-      const b = $(id);
-      if (b) b.disabled = !!on;
-    }
-  }
-
   /* ==================================================== matchmaking */
-  showSearch(mode) {
+  /* Once a queue, now purely the moment you meet your opponent. Nothing is
+     being waited for, so there is no timer, no "looking for a player", and
+     no offer of a bot as a consolation - the bot is who you came to play. */
+  showSearch() {
     this.show('search');
-    this.hideSoloOffer();
-    if (mode !== 'practice') {
-      // PLAY queues for a REAL opponent and keeps queueing. Only after a long
-      // wait do we mention the bot, and then only as a small secondary link -
-      // never as the primary action, and never automatically.
-      clearTimeout(this._soloTimer);
-      this._soloTimer = setTimeout(() => this.showSoloOffer(), 25000);
-    }
     const title = $('searchTitle');
-    if (title) { title.textContent = 'SEARCHING FOR OPPONENT...'; title.classList.remove('found'); }
+    if (title) { title.textContent = 'FINDING AN OPPONENT...'; title.classList.remove('found'); }
     const foe = $('mmFoeCard');
     if (foe) foe.classList.remove('found');
     const fa = $('mmFoeAv'); if (fa) fa.textContent = '?';
@@ -455,10 +367,7 @@ export class UI extends Emitter {
     const me = $('mmMeName'); if (me) me.textContent = displayName();
     const av = $('mmMeAv');
     if (av) av.textContent = FACE_EMOJI[profile.loadout.face] || '🙂';
-    /* Offline, this is the only mode there is, so calling it practice against
-       an "offline bot opponent" both labels the main event as a lesser one and
-       spoils the reveal the opponent card is about to make. */
-    this.setSearchSub(mode === 'practice' ? '' : 'connecting to the brainrot network');
+    this.setSearchSub('');
   }
 
   setSearchSub(text) {
@@ -466,29 +375,9 @@ export class UI extends Emitter {
     if (e) { e.textContent = text; this._searchBase = text; }
   }
 
-  /** ticking "waiting 0:14" so a real queue never looks frozen */
-  setSearchWait(secs) {
-    const e = $('searchSub');
-    if (!e || secs < 3) return;
-    const m = Math.floor(secs / 60), ss = Math.floor(secs % 60);
-    e.textContent = `${this._searchBase || 'looking for an opponent'} · ${m}:${pad2(ss)}`;
-  }
 
-  showSoloOffer(label) {
-    const b = $('btnSoloOffer');
-    if (!b) return;
-    if (label) b.querySelector('small').textContent = label;
-    b.hidden = false;
-  }
-
-  hideSoloOffer() {
-    clearTimeout(this._soloTimer);
-    const b = $('btnSoloOffer');
-    if (b) b.hidden = true;
-  }
 
   showOpponentFound(opp) {
-    this.hideSoloOffer();
     const title = $('searchTitle');
     if (title) { title.textContent = 'OPPONENT FOUND!'; title.classList.add('found'); }
     const foe = $('mmFoeCard');
@@ -497,13 +386,8 @@ export class UI extends Emitter {
     if (fa) fa.textContent = opp?.loadout ? (FACE_EMOJI[opp.loadout.face] || '😈') : '😈';
     const fn = $('mmFoeName');
     if (fn) fn.textContent = (opp?.name || 'OPPONENT').slice(0, 12);
-    /* Naming the bot matters only where a real opponent was an option: on the
-       online build you chose PRACTICE over a live match and deserve telling.
-       In a build with no relay there is nothing to mistake it for, so the
-       opponent is introduced the same way a person would be. */
-    this.setSearchSub(opp?.isBot && this.onlineAvailable
-      ? 'PRACTICE BOT - not a real player'
-      : 'level ' + (opp?.level || 1));
+    // there is only ever one kind of opponent now, so introduce it plainly
+    this.setSearchSub('level ' + (opp?.level || 1));
     sfx.matched();
   }
 
@@ -1116,37 +1000,9 @@ export class UI extends Emitter {
       return;
     }
 
-    // server
-    const srow = el('div', 'setrow');
-    srow.appendChild(elHtml('span', '', 'MULTIPLAYER SERVER<small>blank = same origin /ws</small>'));
-    const input = el('input');
-    input.type = 'text';
-    input.placeholder = 'wss://your-server/ws';
-    input.value = getSetting('serverUrl') || '';
-    input.addEventListener('change', () => {
-      setSetting('serverUrl', input.value.trim());
-      this.emit('setting', 'serverUrl', input.value.trim());
-    });
-    srow.appendChild(input);
-    host.appendChild(srow);
-
-    // connection test
-    const trow = el('div', 'setrow');
-    trow.appendChild(elHtml('span', '', 'CONNECTION<small id="connResult">tap to test the relay</small>'));
-    const tb = el('button', 'seg', 'TEST');
-    tb.className = 'toggle';
-    tb.style.cssText = 'width:auto;padding:0 14px;display:grid;place-items:center;font-family:var(--font);font-size:11px';
-    tb.textContent = 'TEST';
-    tb.addEventListener('click', () => { sfx.ui(); this.emit('testServer'); });
-    trow.appendChild(tb);
-    host.appendChild(trow);
-
   }
 
-  setConnResult(text) {
-    const e = document.getElementById('connResult');
-    if (e) e.textContent = text;
-  }
+
 
 
 }

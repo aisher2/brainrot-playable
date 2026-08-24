@@ -31,27 +31,6 @@ const flag = (name, def = '') => {
   const hit = argv.find((a) => a.startsWith(`--${name}=`));
   return hit ? hit.slice(name.length + 3) : def;
 };
-/**
- * Where PLAY looks for a real opponent.
- *   'auto'  (default) wss://<the host serving this page>/ws - i.e. server/server.js
- *   'wss://...'       a relay on a different host
- *   'off'             no multiplayer at all; only the PRACTICE button works
- */
-/* Env wins over the flag: some hosts (Render) let you set environment
-   variables through their API but not edit the stored build command, so this
-   is the only way to retune a running deployment without a dashboard visit. */
-const RELAY_RAW = process.env.STB_RELAY || flag('relay', 'auto');
-const RELAY = RELAY_RAW === 'off' ? '' : RELAY_RAW;
-/**
- * Where the world leaderboard lives.
- *   'auto'  (default) /api on the host serving this page - i.e. server/server.js
- *   'https://...'     a leaderboard API on a different host
- *   'off'             no world board; LEADERBOARD shows this device's own scores
- */
-const BOARD_RAW = process.env.STB_LEADERBOARD || flag('leaderboard', 'auto');
-const BOARD = BOARD_RAW === 'off' ? '' : BOARD_RAW;
-/** include the YouTube Playables SDK <script> (only meaningful inside their host) */
-const PLAYABLES = argv.includes('--playables');
 /** also emit dist/standalone.html - the whole game in one file, zero requests */
 const SINGLE = argv.includes('--single') || argv.includes('--all');
 
@@ -222,19 +201,18 @@ let html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 html = html.replace('<script type="module" src="src/main.js"></script>', '<script src="bundle.js" defer></script>');
 if (html.includes('src/main.js')) fail('could not rewrite the script tag in index.html');
 // bake in whichever relay the deploy wants
-const cfg = `<script>window.STB_CONFIG = { relay: ${JSON.stringify(RELAY)}, `
-  + `leaderboard: ${JSON.stringify(BOARD)}, dev: false };</script>`;
+const cfg = '<script>window.STB_CONFIG = { dev: false };</script>';
 const cfgRe = /<script>window\.STB_CONFIG[\s\S]*?<\/script>/;
 if (!cfgRe.test(html)) fail('could not find the STB_CONFIG block in index.html');
 html = html.replace(cfgRe, cfg);
 
 html = html.replace(/\n\s*<!--[\s\S]*?-->/g, '');           // strip layout comments
 
-if (PLAYABLES) {
-  // Must load before any game code. It only exists inside the Playables host,
-  // so it stays opt-in and a plain web deploy makes zero external requests.
-  html = html.replace('</head>', '<script src="https://www.youtube.com/game_api/v1"></script>\n</head>');
-}
+/* The SDK must load before any game code, and it is the one external request
+   the Playables rules allow. It is no longer optional: this build is the
+   Playable. Outside the host the script reports IN_PLAYABLES_ENV false and
+   platform.js falls back, so the same output still runs on a plain host. */
+html = html.replace('</head>', '<script src="https://www.youtube.com/game_api/v1"></script>\n</head>');
 const css = fs.readFileSync(path.join(ROOT, 'styles.css'), 'utf8')
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/\n{2,}/g, '\n')
@@ -309,17 +287,8 @@ for (const f of files) {
 console.log(`    ${'TOTAL'.padEnd(12)} ${kb(raw).padStart(10)}  ${kb(comp).padStart(10)} gzipped`);
 console.log(`\n  ${modules.size} modules bundled, ${bundle.split('\n').length} lines` +
   (copied ? `, ${copied} file(s) from public/` : ''));
-console.log(`  relay:     ${RELAY || '(off - PLAY disabled, practice only)'}`);
-if (!RELAY) {
-  console.log('             PLAY will not match real players in this build.');
-} else if (RELAY === 'auto') {
-  console.log('             serve dist/ with server/server.js so /ws exists.');
-}
-console.log(`  board:     ${BOARD || '(off - LEADERBOARD shows this device only)'}`);
-if (BOARD === 'auto') {
-  console.log('             set DATA_DIR to a persistent disk or it resets on redeploy.');
-}
-console.log(`  playables: ${PLAYABLES ? 'SDK script tag included' : 'not included (plain web build)'}`);
+console.log('  offline:   no relay, no board, no external gameplay calls');
+console.log('  playables: SDK script tag included');
 
 // syntax check the emitted bundle before anyone loads it
 const { execFileSync } = await import('node:child_process');

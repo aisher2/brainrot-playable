@@ -6,7 +6,7 @@
      node tools/check.mjs
    ============================================================ */
 
-import { readdirSync, statSync } from 'node:fs';
+import fs, { readdirSync, statSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 
@@ -244,36 +244,6 @@ try {
     }
   }
 
-  /* The WebSocket handshake, pinned to RFC 6455's own published vector.
-
-     This has to come from OUTSIDE our code. The server and the test client
-     each held their own copy of the magic string, both wrong in the same
-     way, so they agreed with each other perfectly while every real browser
-     and CDN refused the connection. A shared constant cannot check itself. */
-  {
-    const crypto = await import('node:crypto');
-    const RFC_KEY = 'dGhlIHNhbXBsZSBub25jZQ==';
-    const RFC_ACCEPT = 's3pPLMBiTxaQ9kYGzzhZRbK+xOo=';
-
-    const src = await import('node:fs').then((fs) =>
-      fs.readFileSync(path.join(ROOT, 'server', 'ws.js'), 'utf8'));
-    const guid = /const GUID = '([^']+)'/.exec(src)?.[1];
-    if (!guid) throw new Error('could not find GUID in server/ws.js');
-
-    const accept = crypto.createHash('sha1').update(RFC_KEY + guid).digest('base64');
-    if (accept !== RFC_ACCEPT) {
-      throw new Error(`handshake magic string is wrong: key ${RFC_KEY} produced ${accept}, `
-        + `RFC 6455 requires ${RFC_ACCEPT}`);
-    }
-
-    // the test client must agree with the spec too, not merely with the server
-    const csrc = await import('node:fs').then((fs) =>
-      fs.readFileSync(path.join(ROOT, 'tools', 'wsclient.mjs'), 'utf8'));
-    const cguid = /const GUID = '([^']+)'/.exec(csrc)?.[1];
-    if (cguid !== guid) throw new Error('test client and server disagree on the magic string');
-    console.log('  ws    handshake matches the RFC 6455 published vector (server and client)');
-  }
-
   /* TAG BOMB: one bomb, one fuse, and the holder when it blows loses */
   {
     const { bombSeconds, firstHolder } = await import(
@@ -345,26 +315,42 @@ try {
   bad++;
 }
 
-/* ---- the deploy switch in index.html has to resolve the way the docs claim ---- */
+/* ---- the shipped bundle must contain no way to reach the network ----
+
+   This is the requirement the whole offline conversion rests on, so it is
+   asserted against the built artifact rather than the source: what matters
+   is what a reviewer downloads, not what the modules intended. The only URL
+   allowed through is the Playables SDK, which the rules explicitly permit. */
 try {
-  const cases = [
-    ['', 'http:', 'localhost:8080', '', 'blank config opens no socket'],
-    ['auto', 'https:', 'game.example.com', 'wss://game.example.com/ws', 'auto derives wss on https'],
-    ['auto', 'http:', 'localhost:8080', 'ws://localhost:8080/ws', 'auto derives ws on http'],
-    ['wss://relay.example.com/ws', 'https:', 'game.example.com', 'wss://relay.example.com/ws', 'explicit relay is used verbatim'],
-  ];
-  for (const [relay, protocol, host, want, label] of cases) {
-    globalThis.STB_CONFIG = { relay };
-    globalThis.location = { protocol, host, search: '' };
-    const mod = await import(pathToFileURL(path.join(SRC, 'core/platform.js')).href + '?c=' + encodeURIComponent(relay + protocol + host));
-    const got = mod.relayUrl();
-    if (got !== want) throw new Error(`${label}: expected "${want}", got "${got}"`);
-    if (mod.onlineEnabled() !== !!want) throw new Error(`${label}: onlineEnabled disagrees`);
+  const DIST = path.join(ROOT, 'dist');
+  if (!fs.existsSync(path.join(DIST, 'bundle.js'))) {
+    throw new Error('dist/bundle.js missing - run `node tools/build.mjs` first');
   }
-  console.log(`  cfg   relay switch resolves correctly in all ${cases.length} deploy shapes`);
+  const bundle = fs.readFileSync(path.join(DIST, 'bundle.js'), 'utf8');
+  const page = fs.readFileSync(path.join(DIST, 'index.html'), 'utf8');
+
+  const banned = ['XMLHttpRequest', 'WebSocket', 'EventSource', 'sendBeacon',
+                  'RTCPeerConnection', 'socket.io', 'firebase', 'supabase', 'axios'];
+  for (const b of banned) {
+    if (bundle.includes(b)) throw new Error(`bundle still references ${b}`);
+  }
+  if (/\bfetch\s*\(/.test(bundle)) throw new Error('bundle still calls fetch()');
+
+  const urls = new Set([...bundle.matchAll(/(?:https?|wss?):\/\/[^\s'\"`)]+/g)].map((m) => m[0]));
+  for (const u of urls) throw new Error('bundle contains an external URL: ' + u);
+
+  const pageUrls = [...page.matchAll(/(?:https?|wss?):\/\/[^\s'\"`)>]+/g)].map((m) => m[0]);
+  const ALLOWED = ['https://www.youtube.com/game_api/v1', 'http://www.w3.org/2000/svg'];
+  for (const u of pageUrls) {
+    if (!ALLOWED.includes(u)) throw new Error('index.html contains an unexpected URL: ' + u);
+  }
+  if (!page.includes('https://www.youtube.com/game_api/v1')) {
+    throw new Error('the Playables SDK script tag is missing');
+  }
+  console.log('  offline bundle has no network primitives; only the Playables SDK URL remains');
   ok++;
 } catch (e) {
-  console.error('  FAIL  relay config\n        ' + e.message);
+  console.error('  FAIL  offline audit\n        ' + e.message);
   bad++;
 }
 
