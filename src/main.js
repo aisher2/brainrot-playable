@@ -358,7 +358,7 @@ async function probeServer() {
   const url = relayUrl(getSetting('serverUrl'));
   if (!url) {
     ui.setOnlineAvailable(false);
-    ui.setPlaySub('practice · 60 seconds');
+    ui.setPlaySub('1v1 · 60 seconds');
     return;
   }
   ui.setPlaySub('online · 1v1 · 60s');
