@@ -306,7 +306,7 @@ export function stepSim(s, inputs, fx = null) {
   stepUltimates(s, fx);
   stepBrainrot(s, fx);
   stepPickups(s, fx);
-  stepTagBomb(s, fx);
+  stepContact(s, fx);
   stepScoring(s, fx);
 
   if (s.timeLeft <= 0) endRound(s, fx);
@@ -870,41 +870,64 @@ function stepPickups(s, fx) {
    way to move it is to catch the other player. The fuse does NOT reset on a
    tag - it is one continuous countdown for the whole round, which is what
    turns the last five seconds into a scramble. */
-function stepTagBomb(s, fx) {
-  if (s.variant !== 'tagbomb') return;
+function stepContact(s, fx) {
   const br = s.br;
   s.tagCd = Math.max(0, s.tagCd - DT);
-  br.fuse = s.timeLeft;                 // the round timer IS the fuse
+  if (s.variant === 'tagbomb') br.fuse = s.timeLeft;   // the round timer IS the fuse
 
-  const i = br.owner;
-  if (i < 0) return;
-  const holder = s.players[i];
-  const prey = s.players[1 - i];
+  const owner = br.owner;
+  if (owner < 0 || s.tagCd > 0) return;
 
-  // a holder who cannot act cannot tag
-  if (s.tagCd > 0 || holder.stunT > 0 || holder.freezeT > 0 || holder.slipT > 0) return;
+  /* Both modes move the brainrot on contact; they differ only in who has to
+     do the touching. TAG BOMB: the holder is carrying a bomb and wants rid of
+     it, so the HOLDER tags. Classic: the brainrot is the prize, so the player
+     WITHOUT it takes it by getting to them. */
+  const giving = s.variant === 'tagbomb';
+  const actor = s.players[giving ? owner : 1 - owner];
+  const target = s.players[giving ? 1 - owner : owner];
 
-  const dx = prey.x - holder.x, dz = prey.z - holder.z;
+  // whoever has to make the move must actually be able to
+  if (actor.stunT > 0 || actor.freezeT > 0 || actor.slipT > 0 || actor.lockT > 0) return;
+
+  const dx = target.x - actor.x, dz = target.z - actor.z;
   const d2 = dx * dx + dz * dz;
   if (d2 > CFG.TAG_R * CFG.TAG_R) return;
-  if (Math.abs(prey.y - holder.y) > 2.2) return;
+  if (Math.abs(target.y - actor.y) > 2.2) return;
 
-  /* TAG. Hand it over, shove them apart so the next one has to be earned,
-     and lock it briefly so a single collision cannot bounce it back. */
-  br.owner = 1 - i;
-  br.lastOwner = i;
+  const taker = giving ? 1 - owner : 1 - owner;   // in both cases it leaves the owner
+  br.owner = taker;
+  br.lastOwner = owner;
   br.sinceDrop = 0;
   s.tagCd = CFG.TAG_COOLDOWN;
-  holder.tags++;
-  prey.lockT = Math.max(prey.lockT, CFG.TAG_COOLDOWN);
 
+  const loser = s.players[owner];
+  loser.longestHold = Math.max(loser.longestHold, loser.curHold);
+  loser.curHold = 0;
+  // the one who just lost it cannot immediately grab it straight back
+  loser.lockT = Math.max(loser.lockT, CFG.TAG_COOLDOWN);
+
+  if (giving) {
+    actor.tags++;
+  } else {
+    const thief = s.players[taker];
+    thief.steals++;
+    thief.pickups++;
+    thief.score += CFG.STEAL_BONUS;
+    if (s.timeLeft <= 5) thief.lastSecondSteal = 1;
+  }
+
+  // shove them apart so the next one has to be earned rather than mashed
   const d = Math.sqrt(d2) || 1;
   const nx = dx / d, nz = dz / d;
-  prey.vx += nx * CFG.TAG_PUSH; prey.vz += nz * CFG.TAG_PUSH;
-  holder.vx -= nx * CFG.TAG_PUSH * 0.6; holder.vz -= nz * CFG.TAG_PUSH * 0.6;
-  prey.anim = 4; prey.animT = 0.3;
+  target.vx += nx * CFG.TAG_PUSH; target.vz += nz * CFG.TAG_PUSH;
+  actor.vx -= nx * CFG.TAG_PUSH * 0.6; actor.vz -= nz * CFG.TAG_PUSH * 0.6;
+  target.anim = 4; target.animT = 0.3;
 
-  if (fx) fx.push({ t: 'tag', p: i, to: 1 - i, x: prey.x, y: prey.y, z: prey.z });
+  if (fx) {
+    fx.push(giving
+      ? { t: 'tag', p: owner, to: taker, x: target.x, y: target.y, z: target.z }
+      : { t: 'pickup', p: taker, steal: true, x: br.x, y: br.y, z: br.z });
+  }
 }
 
 function stepScoring(s, fx) {

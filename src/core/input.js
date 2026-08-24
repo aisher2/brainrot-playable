@@ -107,7 +107,7 @@ export class Input {
    * interrupts running.
    */
   _bindLook() {
-    const isControl = (t) => !!(t && t.closest && t.closest('.stick,.abtn,.tbtn,.stealbtn,button,input'));
+    const isControl = (t) => !!(t && t.closest && t.closest('.stick,.abtn,.tbtn,button,input'));
     addEventListener('pointerdown', (e) => {
       if (!this.enabled || this.look.id !== -1) return;
       if (this.stick.active && e.pointerId === this.stick.id) return;

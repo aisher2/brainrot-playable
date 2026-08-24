@@ -35,7 +35,7 @@ const app = {
   raf: 0, last: 0, acc: 0, fps: 60, frameAvg: 16.7,
   quality: 1, qualityLock: false, qTimer: 0,
   lastCd: -99, slow: 1, ending: false, resultShown: false,
-  paused: false, opp: null, localIdx: 0, hostAudioOk: true, stealTap: false,
+  paused: false, opp: null, localIdx: 0, hostAudioOk: true,
 };
 globalThis.__stb = app;   // handy for debugging in the console
 
@@ -265,7 +265,6 @@ function wireUI() {
   });
 
   // the steal prompt just fires a dash at the holder
-  ui.on('stealTap', () => { app.stealTap = true; });
 
   ui.on('screen', (name) => {
     // Keep simulating behind the results screen so the winner's victory
@@ -273,7 +272,6 @@ function wireUI() {
     const inArena = (name === 'hud' || name === 'result') && !!app.session;
     app.mode = inArena ? 'match' : 'menu';
     app.input.setEnabled(name === 'hud');
-    if (name !== 'hud') ui.setStealPrompt(false);
     if (app.view) app.view.showPlates(name === 'hud');
   });
 
@@ -447,7 +445,6 @@ async function startMatch(mode, opts = {}) {
 
   const readInput = () => {
     const inp = app.input.read();
-    if (app.stealTap) { inp.dash = true; app.stealTap = false; }
     return inp;
   };
   // practice plays whatever the menu says; online is told by the relay, which
@@ -473,8 +470,6 @@ async function startMatch(mode, opts = {}) {
   ui.setBombMode(session.variant === 'tagbomb');
   // the magnet only works on a loose brainrot, which TAG BOMB never has
   ui.setAbilityAvailable(2, session.variant !== 'tagbomb');
-  // nothing to steal in TAG BOMB: the pass happens on contact
-  app.noSteal = session.variant === 'tagbomb';
   app.lastTick = -1;
   ui.setMatchNames(names[0], names[1]);
   ui.setScores(0, 0);
@@ -716,14 +711,6 @@ function syncHud(sim) {
   ui.setAbility(2, me.cd2, CFG.ABILITY_LOCK, me.ch2);
   ui.setAbility(3, me.dashCd, CFG.DASH_CD);
 
-  /* The steal prompt is pure affordance: it appears only when a dash would
-     actually connect, and vanishes the moment you drift out of range. */
-  const canSteal = sim.phase === 'play'
-    && sim.br.owner === 1 - app.localIdx
-    && me.stunT <= 0 && me.freezeT <= 0 && me.slipT <= 0
-    && Math.hypot(foe.x - me.x, foe.z - me.z) < CFG.DASH_HIT_R + 2.6
-    && Math.abs(foe.y - me.y) < 2.2;
-  ui.setStealPrompt(canSteal && !app.noSteal);
 
   if (sim.phase === 'countdown') {
     const n = Math.ceil(sim.phaseT - 0.6);

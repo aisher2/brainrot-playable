@@ -266,9 +266,6 @@ export class UI extends Emitter {
     click('btnAgain', () => this.emit('again'));
     click('btnHome', () => this.emit('home'));
     click('btnQuit', () => this.emit('quit'));
-    // the steal prompt is a shortcut for "dash at them", not a new mechanic
-    const st = $('btnSteal');
-    if (st) st.addEventListener('pointerdown', (e) => { e.preventDefault(); this.emit('stealTap'); });
     click('btnMute', () => this._toggleMute());
 
     for (const b of document.querySelectorAll('.sheet-head .back')) {
@@ -698,14 +695,7 @@ export class UI extends Emitter {
 
   setDashReady(ready) { /* handled by setAbility(3, ...) */ }
 
-  /** big tappable prompt, only while a steal is genuinely possible */
-  setStealPrompt(on) {
-    const b = $('btnSteal');
-    if (!b) return;
-    if (b.hidden === !on) return;
-    b.hidden = !on;
-    if (on) sfx.tick();
-  }
+
 
   flash(kind) {
     const f = $('fx-flash');

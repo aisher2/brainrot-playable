@@ -109,7 +109,7 @@ second stick and a keyboard needs no mouse.
 
 | | How you score |
 | --- | --- |
-| **CLASSIC** | hold the Brainrot. +1 every 0.25s, +10 for a steal |
+| **CLASSIC** | hold the Brainrot. +1 every 0.25s, +10 for a steal - and you steal it by **touching** the holder, no button |
 | **HOT POTATO** | the Brainrot is armed. Holding pays **nothing** - you score by offloading it (+3) and by being the one not holding it when it goes off (+18) |
 
 The fuse starts at 6.5s and tightens to 3.0s by the end of the round, so late
