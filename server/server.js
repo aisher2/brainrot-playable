@@ -373,6 +373,16 @@ function send(c, obj) {
   try { c.conn.send(JSON.stringify(obj)); } catch (_) {}
 }
 
+/**
+ * Names land on other people's screens, so they are reduced to a charset
+ * that cannot mean anything to a parser: A-Z, 0-9, underscore. It matches
+ * what the name screen already lets you type, and it means a hostile name
+ * carries no markup even if a future renderer forgets to escape it.
+ */
+function safeName(v) {
+  return String(v ?? '').toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 12) || 'BRAINROT';
+}
+
 function sanitizeProfile(p) {
   if (!p || typeof p !== 'object') return { name: 'BRAINROT', level: 1, loadout: null };
   const str = (v, n) => (typeof v === 'string' ? v.slice(0, n) : '');
@@ -382,7 +392,7 @@ function sanitizeProfile(p) {
     if (typeof lo[k] === 'string' && lo[k].length < 24) out[k] = lo[k];
   }
   return {
-    name: str(p.name, 12).replace(/\p{C}/gu, '').trim() || 'BRAINROT',
+    name: safeName(p.name),
     level: Math.max(1, Math.min(999, Number(p.level) || 1)),
     loadout: out,
   };
@@ -531,9 +541,14 @@ attach(server, '/ws', (conn) => {
       }
 
       case 'joinroom': {
+        /* Four characters is roughly 923k combinations - walkable by a script
+           in hours. A few misses per connection makes that pointless without
+           inconveniencing anyone typing a code by hand. */
+        c.badJoins = c.badJoins || 0;
+        if (c.badJoins >= 8) { send(c, { t: 'err', m: 'too many bad codes', code: 'noroom' }); break; }
         const code = String(m.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
         const room = privateRooms.get(code);
-        if (!room) { send(c, { t: 'err', m: 'No room with that code.', code: 'noroom' }); break; }
+        if (!room) { c.badJoins++; send(c, { t: 'err', m: 'No room with that code.', code: 'noroom' }); break; }
         const hostC = clients.get(room.hostId);
         if (!hostC || !hostC.conn.open) {
           privateRooms.delete(code);

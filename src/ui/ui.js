@@ -19,7 +19,21 @@ import { CONFIG } from '../core/platform.js';
 import { sfx } from '../core/audio.js';
 
 const $ = (id) => document.getElementById(id);
-const el = (tag, cls, html) => {
+/**
+ * Build an element with TEXT content. Safe by default on purpose: player
+ * names arrive from the leaderboard API, which anyone can write to, and an
+ * innerHTML default meant a name could inject markup into every other
+ * player's screen. Use elHtml only for markup this file authors itself.
+ */
+const el = (tag, cls, text) => {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+};
+
+/** Same, but the content is trusted markup written here - never user data. */
+const elHtml = (tag, cls, html) => {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
   if (html != null) e.innerHTML = html;
@@ -738,7 +752,7 @@ export class UI extends Emitter {
     let hidden = 0;
     const row = (label, val, cls = '') => {
       if (list.children.length >= MAX_ROWS) { hidden++; return; }
-      const d = el('div', 'rw ' + cls, `<span>${label}</span><b>${val}</b>`);
+      const d = elHtml('div', 'rw ' + cls, `<span>${label}</span><b>${val}</b>`);
       d.style.animationDelay = delay.toFixed(2) + 's';
       delay += 0.07;
       list.appendChild(d);
@@ -930,7 +944,7 @@ export class UI extends Emitter {
     if (scopeEl) scopeEl.textContent = scope;
     list.innerHTML = '';
     if (!rows.length) {
-      list.appendChild(el('div', 'row', '<span class="who">No scores yet. Go steal something.</span>'));
+      list.appendChild(elHtml('div', 'row', '<span class="who">No scores yet. Go steal something.</span>'));
       return;
     }
     rows.forEach((r, i) => {
@@ -986,8 +1000,8 @@ export class UI extends Emitter {
 
     const toggle = (label, sub, key, onChange) => {
       const row = el('div', 'setrow');
-      row.appendChild(el('span', '', `${label}${sub ? `<small>${sub}</small>` : ''}`));
-      const t = el('div', 'toggle' + (getSetting(key) ? ' on' : ''), '<i></i>');
+      row.appendChild(elHtml('span', '', `${label}${sub ? `<small>${sub}</small>` : ''}`));
+      const t = elHtml('div', 'toggle' + (getSetting(key) ? ' on' : ''), '<i></i>');
       t.addEventListener('click', () => {
         const v = !getSetting(key);
         setSetting(key, v);
@@ -1007,7 +1021,7 @@ export class UI extends Emitter {
 
     // quality
     const qrow = el('div', 'setrow');
-    qrow.appendChild(el('span', '', 'GRAPHICS<small>auto drops detail if the frame rate dips</small>'));
+    qrow.appendChild(elHtml('span', '', 'GRAPHICS<small>auto drops detail if the frame rate dips</small>'));
     const seg = el('div', 'seg');
     for (const q of ['auto', 'low', 'medium', 'high']) {
       const b = el('button', getSetting('quality') === q ? 'on' : '',
@@ -1025,7 +1039,7 @@ export class UI extends Emitter {
 
     // camera sensitivity (swipe to look around)
     const crow = el('div', 'setrow');
-    crow.appendChild(el('span', '', 'CAMERA SWIPE<small>drag the arena to look around · 0 turns it off</small>'));
+    crow.appendChild(elHtml('span', '', 'CAMERA SWIPE<small>drag the arena to look around · 0 turns it off</small>'));
     const cseg = el('div', 'seg');
     for (const [label, v] of [['OFF', 0], ['LOW', 0.5], ['MED', 1], ['HIGH', 1.8]]) {
       const b = el('button', Math.abs((getSetting('camSens') ?? 1) - v) < 0.01 ? 'on' : '', label);
@@ -1042,7 +1056,7 @@ export class UI extends Emitter {
 
     // reset (player-facing, always available)
     const rrow = el('div', 'setrow');
-    rrow.appendChild(el('span', '', 'RESET PROGRESS<small>wipes coins, levels and collection</small>'));
+    rrow.appendChild(elHtml('span', '', 'RESET PROGRESS<small>wipes coins, levels and collection</small>'));
     const rb = el('div', 'toggle');
     rb.style.cssText = 'width:auto;padding:0 14px;display:grid;place-items:center;font-family:var(--font);font-size:11px;color:#ff5b5b';
     rb.textContent = 'WIPE';
@@ -1062,7 +1076,7 @@ export class UI extends Emitter {
 
     // server
     const srow = el('div', 'setrow');
-    srow.appendChild(el('span', '', 'MULTIPLAYER SERVER<small>blank = same origin /ws</small>'));
+    srow.appendChild(elHtml('span', '', 'MULTIPLAYER SERVER<small>blank = same origin /ws</small>'));
     const input = el('input');
     input.type = 'text';
     input.placeholder = 'wss://your-server/ws';
@@ -1076,7 +1090,7 @@ export class UI extends Emitter {
 
     // connection test
     const trow = el('div', 'setrow');
-    trow.appendChild(el('span', '', 'CONNECTION<small id="connResult">tap to test the relay</small>'));
+    trow.appendChild(elHtml('span', '', 'CONNECTION<small id="connResult">tap to test the relay</small>'));
     const tb = el('button', 'seg', 'TEST');
     tb.className = 'toggle';
     tb.style.cssText = 'width:auto;padding:0 14px;display:grid;place-items:center;font-family:var(--font);font-size:11px';

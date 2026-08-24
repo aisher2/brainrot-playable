@@ -473,6 +473,8 @@ async function startMatch(mode, opts = {}) {
   ui.setBombMode(session.variant === 'tagbomb');
   // the magnet only works on a loose brainrot, which TAG BOMB never has
   ui.setAbilityAvailable(2, session.variant !== 'tagbomb');
+  // nothing to steal in TAG BOMB: the pass happens on contact
+  app.noSteal = session.variant === 'tagbomb';
   app.lastTick = -1;
   ui.setMatchNames(names[0], names[1]);
   ui.setScores(0, 0);
@@ -721,7 +723,7 @@ function syncHud(sim) {
     && me.stunT <= 0 && me.freezeT <= 0 && me.slipT <= 0
     && Math.hypot(foe.x - me.x, foe.z - me.z) < CFG.DASH_HIT_R + 2.6
     && Math.abs(foe.y - me.y) < 2.2;
-  ui.setStealPrompt(canSteal);
+  ui.setStealPrompt(canSteal && !app.noSteal);
 
   if (sim.phase === 'countdown') {
     const n = Math.ceil(sim.phaseT - 0.6);
