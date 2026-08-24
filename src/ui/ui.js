@@ -342,12 +342,17 @@ export class UI extends Emitter {
   setOnlineAvailable(on) {
     this.onlineAvailable = !!on;
     const prac = $('btnPractice');
+    const friend = $('btnFriend');
     const label = document.querySelector('#btnPlay > span');
     // With a relay, PLAY means a real person and PRACTICE is the separate
     // opt-in. Without one there is no real person to find, so the primary
     // button says exactly what it will give you rather than quietly
     // substituting a bot behind the word PLAY.
     if (prac) prac.hidden = !on;
+    /* A friend room is a relay feature. With no relay the button opens a
+       screen that can never connect, so it is worse than absent - the offline
+       build leads with LEVELS instead. */
+    if (friend) friend.hidden = !on;
     if (label) label.textContent = on ? 'PLAY' : 'PLAY VS BOT';
   }
 
