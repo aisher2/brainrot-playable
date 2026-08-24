@@ -196,7 +196,7 @@ function wireUI() {
   const ui = app.ui;
 
   // PLAY queues for a real player. Only a build with no relay at all falls
-  // through to practice, and in that build the button is labelled PLAY VS BOT.
+  // through to practice, where it is the single way into a match.
   ui.on('play', () => startMatch(onlineEnabled() ? 'online' : 'practice'));
   ui.on('practice', () => startMatch('practice', { variant: getSetting('variant') || 'classic' }));
   ui.on('level', (id) => {
