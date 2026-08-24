@@ -332,10 +332,20 @@ function wireUI() {
   yt.onPause(() => setPaused(true));
   yt.onResume(() => setPaused(document.hidden));
 
-  // ...and it owns the mute switch while we are embedded
-  app.hostAudioOk = yt.audioEnabled();
+  /* ...and it owns the mute switch while we are embedded.
+
+     Do not cache this. Asked during boot the SDK can answer "audio is off"
+     simply because it is not up yet, and the change event that would correct
+     that is not guaranteed to arrive - which left the game permanently silent
+     with isAudioEnabled() cheerfully reporting true. applyHostAudio re-asks
+     every time instead, and the first real gesture forces one more check,
+     since that is the moment the browser lets anything play. */
   applyHostAudio();
-  yt.onAudioEnabledChange((on) => { app.hostAudioOk = !!on; applyHostAudio(); });
+  yt.onAudioEnabledChange(() => applyHostAudio());
+  const recheck = () => applyHostAudio();
+  addEventListener('pointerdown', recheck, { passive: true, once: true });
+  addEventListener('keydown', recheck, { passive: true, once: true });
+  addEventListener('touchstart', recheck, { passive: true, once: true });
 
   addEventListener('resize', () => app.view?.resize());
   addEventListener('orientationchange', () => setTimeout(() => app.view?.resize(), 120));
@@ -343,6 +353,7 @@ function wireUI() {
 
 /** Our own mute setting AND the host's have to agree before anything plays. */
 function applyHostAudio() {
+  app.hostAudioOk = yt.audioEnabled();
   const ok = app.hostAudioOk !== false;
   setMusicEnabled(ok && getSetting('music'));
   setSfxEnabled(ok && getSetting('sfx'));

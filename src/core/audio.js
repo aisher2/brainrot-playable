@@ -72,7 +72,11 @@ export function setSfxEnabled(on) {
   state.sfx = on;
   if (sfxBus) sfxBus.gain.setTargetAtTime(on ? 0.85 : 0, ctx.currentTime, 0.05);
 }
-export function setMuted(m) { setMusicEnabled(!m && state.music); setSfxEnabled(!m && state.sfx); }
+/* setMuted() used to live here. It read `state.music` to decide what to
+   restore, but setMusicEnabled writes that same field, so muting erased
+   the value unmuting needed and audio never came back. Nothing called it;
+   applyHostAudio in main.js re-derives both buses from the saved settings
+   instead, which cannot latch. */
 export function audioReady() { return !!ctx && ctx.state === 'running'; }
 
 /** the live AudioContext, for tooling that needs to tap the output */
