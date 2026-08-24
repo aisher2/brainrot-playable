@@ -334,6 +334,9 @@ export class UI extends Emitter {
 
   /** TAG BOMB reads its countdown as a fuse, not a round clock. */
   setBombMode(on) {
+    this.bombMode = !!on;
+    const hud = $('s-hud');
+    if (hud) hud.classList.toggle('bomb', !!on);
     const t = $('timerBox');
     if (t) t.classList.toggle('bomb', !!on);
     const lab = t?.querySelector('small');
@@ -577,7 +580,9 @@ export class UI extends Emitter {
       txt.textContent = 'BRAINROT IS LOOSE - GRAB IT!';
     } else {
       bar.classList.add(idx === 0 ? 'p1' : 'p2');
-      txt.textContent = (golden ? '👑 2x - ' : 'BRAINROT HOLDER: ') + this.names[idx];
+      txt.textContent = this.bombMode
+        ? `\uD83D\uDCA3 ${this.names[idx]} HAS THE BOMB`
+        : (golden ? '\uD83D\uDC51 2x - ' : 'BRAINROT HOLDER: ') + this.names[idx];
     }
     for (let i = 0; i < 2; i++) {
       const box = $('scoreP' + (i + 1));

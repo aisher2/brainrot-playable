@@ -132,14 +132,29 @@ canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;background
 .btn:disabled{opacity:.45;pointer-events:none}
 .btn-row{display:flex;gap:10px;width:100%}
 .btn-row.wide{margin-top:6px}
-.menu-btns{display:flex;flex-direction:column;gap:8px;width:min(92vw,420px);align-items:stretch}
+.menu-btns{
+  display:flex;flex-direction:column;gap:8px;width:min(92vw,420px);align-items:stretch;
+  /* The 3D scene behind the menu is bright and busy, and the quieter rows
+     (mode picker, practice, blurb) were competing with a character for the
+     same pixels. A soft panel keeps every label readable without hiding the
+     scene the menu is sitting in. */
+  position:relative;padding:12px;border-radius:22px;
+  background:linear-gradient(180deg,rgba(20,6,36,.30),rgba(14,4,26,.62));
+  box-shadow:0 10px 34px rgba(0,0,0,.34);
+  backdrop-filter:blur(3px);
+}
 /* The top bar and the streak/status chips are absolutely positioned, so the
    button stack has to reserve their space or it grows straight through them. */
-#s-menu{padding-top:calc(58px + var(--safe-t));padding-bottom:calc(46px + var(--safe-b))}
+#s-menu{padding-top:calc(58px + var(--safe-t));padding-bottom:calc(64px + var(--safe-b))}
 /* Short viewports: shave the stack rather than let it collide. */
 /* the tagline is long; on a phone let it sit on one line rather than wrap */
 @media (max-width:420px){ .tagline{letter-spacing:.03em;font-size:10px} }
 @media (max-height:780px){
+  /* the mode row costs ~50px; buy it back from the logo rather than let the
+     stack push into the top bar or the footer chips */
+  .logo .l1{font-size:clamp(28px,8.5vw,58px)}
+  .logo .l3{font-size:clamp(30px,9.4vw,64px)}
+  .logo .l2{font-size:clamp(13px,3.8vw,24px)}
   .btn.play{font-size:clamp(23px,7vw,34px);padding:10px 34px}
   .btn.small{min-height:56px;padding:7px 8px}
   .btn.small i{font-size:20px}
@@ -176,15 +191,16 @@ canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;background
 .panel h2{margin:0 0 14px;font-size:24px;color:var(--gold);-webkit-text-stroke:3px var(--ink);paint-order:stroke fill}
 
 /* ============ MODE PICKER ============ */
-.modepick{display:flex;align-items:center;gap:6px;width:100%}
-.modepick > span{font-size:9px;letter-spacing:.18em;opacity:.5;flex:0 0 auto;padding-right:2px}
+.modepick{display:flex;align-items:center;gap:5px;width:100%;
+  background:#00000038;border:2px solid #ffffff1a;border-radius:14px;padding:4px}
+.modepick > span{font-size:8px;letter-spacing:.16em;opacity:.45;flex:0 0 auto;padding:0 4px}
 .modepick button{
   flex:1;font-family:var(--font);font-size:10px;letter-spacing:.08em;
   padding:8px 6px;border-radius:11px;cursor:pointer;white-space:nowrap;
   background:#ffffff0f;border:2px solid #ffffff26;color:#ffffffb0;
 }
 .modepick button.on{background:var(--gold);border-color:var(--ink);color:var(--ink)}
-.modeblurb{margin-top:-4px;font-size:9px;letter-spacing:.13em;opacity:.55;text-align:center;min-height:1.2em}
+.modeblurb{margin-top:-3px;font-size:8px;letter-spacing:.12em;opacity:.5;text-align:center;min-height:1em}
 
 /* ============ PICK YOUR NAME ============ */
 .namepanel{display:flex;flex-direction:column;gap:12px;align-items:stretch}
@@ -263,6 +279,13 @@ canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;background
 .score.p2 .sc{color:#d6f6ff}
 .score.p2 .hold{background:var(--p2);left:auto;right:0}
 .score.owner{box-shadow:0 0 0 3px var(--gold), 0 0 22px var(--gold)}
+/* In TAG BOMB the big number is tags made, not points - say so, or a 0 on
+   screen for a whole round reads as "you are losing". */
+.hud.bomb .score .sc::after{
+  content:'TAGS';display:block;font-size:8px;letter-spacing:.16em;opacity:.55;
+  -webkit-text-stroke:0;margin-top:-2px;
+}
+.hud.bomb .score .hold{display:none}
 .score.bump .sc{animation:bump .18s ease}
 @keyframes bump{50%{transform:scale(1.3)}}
 .timer{background:#00000078;border:4px solid var(--ink);border-radius:16px;padding:3px 14px 5px;text-align:center;min-width:78px}
@@ -286,7 +309,7 @@ canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;background
 
 /* toasts / notifications */
 .mapchip{
-  position:absolute;top:calc(112px + var(--safe-t));left:50%;transform:translateX(-50%);
+  position:absolute;top:calc(128px + var(--safe-t));left:50%;transform:translateX(-50%);
   font-size:clamp(9px,2.6vw,11px);letter-spacing:.22em;text-transform:uppercase;
   color:var(--gold);background:#00000073;border:2px solid #ffffff1f;border-radius:99px;
   padding:4px 15px;white-space:nowrap;opacity:0;pointer-events:none;

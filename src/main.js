@@ -686,7 +686,8 @@ function handleFx(list, sim) {
    ============================================================ */
 function syncHud(sim) {
   const ui = app.ui;
-  ui.setScores(sim.players[0].score, sim.players[1].score);
+  if (sim.variant === 'tagbomb') ui.setScores(sim.players[0].tags, sim.players[1].tags);
+  else ui.setScores(sim.players[0].score, sim.players[1].score);
   ui.setTime(sim.timeLeft);
   ui.setHolder(sim.br.owner, sim.br.golden > 0);
 
