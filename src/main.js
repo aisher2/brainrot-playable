@@ -438,6 +438,12 @@ async function onRoundEnded(data) {
 
   submitScore(me.score, { won: won ? 1 : 0, hold: Math.round(me.holdTime * 10) / 10 });
 
+  /* Report the round to the host. Each mode is measured by its own number -
+     CLASSIC has no tags and TAG BOMB awards no score - so send whichever one
+     the player was actually playing for, which is also the number the HUD
+     showed them all round. */
+  yt.sendScore(app.session?.variant === 'tagbomb' ? (me.tags || 0) : me.score);
+
   /* --- level ladder --- */
   let levelResult = null;
   if (app.level) {

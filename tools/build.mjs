@@ -208,11 +208,14 @@ html = html.replace(cfgRe, cfg);
 
 html = html.replace(/\n\s*<!--[\s\S]*?-->/g, '');           // strip layout comments
 
-/* The SDK must load before any game code, and it is the one external request
-   the Playables rules allow. It is no longer optional: this build is the
-   Playable. Outside the host the script reports IN_PLAYABLES_ENV false and
-   platform.js falls back, so the same output still runs on a plain host. */
-html = html.replace('</head>', '<script src="https://www.youtube.com/game_api/v1"></script>\n</head>');
+/* The SDK is the one external request the Playables rules allow, and it MUST
+   execute before any game code - the certification suite checks exactly
+   that. It goes immediately after <head>, ahead of the STB_CONFIG inline
+   script, which counts as game code and was previously running first. */
+html = html.replace('<head>', '<head>\n<script src="https://www.youtube.com/game_api/v1"></script>');
+if (html.indexOf('game_api/v1') > html.indexOf('STB_CONFIG')) {
+  fail('the Playables SDK must come before the STB_CONFIG script');
+}
 const css = fs.readFileSync(path.join(ROOT, 'styles.css'), 'utf8')
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/\n{2,}/g, '\n')

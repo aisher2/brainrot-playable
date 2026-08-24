@@ -86,6 +86,21 @@ export const yt = {
     if (sdk) safe(() => sdk.system?.onAudioEnabledChange?.(fn), 'onAudioEnabledChange');
   },
 
+  /**
+   * Report a round's result to the host.
+   *
+   * The SDK validates this itself and throws on anything that is not a safe
+   * integer, so the coercion here is not defensive padding - a fractional
+   * hold time would be rejected outright. Non-finite values are dropped
+   * rather than sent as 0, since a fake score is worse than no score.
+   */
+  sendScore(value) {
+    if (!sdk) return;
+    if (typeof value !== 'number' || !Number.isFinite(value)) return;
+    const v = Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, Math.round(value)));
+    safe(() => sdk.engagement?.sendScore?.({ value: v })?.catch?.(() => {}), 'sendScore');
+  },
+
   /** Surface a fatal error to the host so it can report it. */
   logError(err) {
     if (!sdk) return;

@@ -347,6 +347,18 @@ try {
   if (!page.includes('https://www.youtube.com/game_api/v1')) {
     throw new Error('the Playables SDK script tag is missing');
   }
+
+  /* Certification requires the SDK to execute before any game code, and the
+     STB_CONFIG inline script counts as game code - it was running first and
+     failing the check while the SDK tag itself was present and correct. */
+  const firstScript = page.indexOf('<script');
+  const sdkAt = page.indexOf('game_api/v1');
+  if (page.lastIndexOf('<script', sdkAt) !== firstScript) {
+    throw new Error('the Playables SDK is not the first script in the document');
+  }
+  if (sdkAt > page.indexOf('STB_CONFIG')) {
+    throw new Error('STB_CONFIG runs before the Playables SDK');
+  }
   console.log('  offline bundle has no network primitives; only the Playables SDK URL remains');
   ok++;
 } catch (e) {
