@@ -32,6 +32,13 @@ body{
 canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;background:linear-gradient(180deg,#3b1263 0%,#1a0a2b 100%)}
 
 #ui{position:fixed;inset:0;z-index:5}
+/* Any rule that sets `display` beats the browser's built-in [hidden] rule, so
+   every such element needs its own guard. This codebase kept rediscovering
+   that one element at a time - .abtn, then .btn, which left PLAY WITH A FRIEND
+   and PRACTICE VS BOT painted on screen in the offline build while their
+   .hidden property was perfectly true. One rule ends the class of bug; the
+   individual guards further down are now redundant but harmless. */
+[hidden]{display:none !important}
 #ui[hidden]{display:none}
 
 /* ---------- generic screen ---------- */
