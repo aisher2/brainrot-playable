@@ -82,7 +82,6 @@ function freshProfile() {
       quality: 'auto',       // auto | low | medium | high
       camSens: 1,            // 0 = locked camera, 2 = very swipe-sensitive
       serverUrl: '',         // blank -> derived from page origin
-      showFps: false,
     },
     firstRun: true,
   };

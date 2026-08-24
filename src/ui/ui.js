@@ -308,8 +308,6 @@ export class UI extends Emitter {
   renderMenu() {
     this._refreshLevel();
     this._refreshMute();
-    const st = $('streakChip');
-    if (st) st.textContent = '🔥 streak ' + profile.streak;
     const q = $('questsLabel');
     if (q) {
       const pending = todaysChallenges().filter((c) => c.done).length;
@@ -342,12 +340,7 @@ export class UI extends Emitter {
     if (lab) lab.textContent = on ? '\uD83D\uDCA3 FUSE' : 'TIME';
   }
 
-  setNetStatus(kind, text) {
-    const c = $('netChip');
-    if (!c) return;
-    c.className = 'chip' + (kind === 'ok' ? ' live' : kind === 'err' ? ' err' : '');
-    c.textContent = text;
-  }
+
 
   setPlaySub(text) { const e = $('playSub'); if (e) e.textContent = text; }
 
@@ -360,9 +353,7 @@ export class UI extends Emitter {
   setOnlineAvailable(on) {
     this.onlineAvailable = !!on;
     const prac = $('btnPractice');
-    const chip = $('netChip');
     const label = document.querySelector('#btnPlay > span');
-    if (chip) chip.hidden = !on;
     // With a relay, PLAY means a real person and PRACTICE is the separate
     // opt-in. Without one there is no real person to find, so the primary
     // button says exactly what it will give you rather than quietly
@@ -1011,7 +1002,6 @@ export class UI extends Emitter {
     toggle('MUSIC', 'chiptune that gets frantic at the end', 'music');
     toggle('SOUND EFFECTS', '', 'sfx');
     toggle('SCREEN SHAKE', 'turn off if it feels like too much', 'shake');
-    if (CONFIG.dev) toggle('SHOW FPS', '', 'showFps');
 
     // quality
     const qrow = el('div', 'setrow');
@@ -1100,21 +1090,7 @@ export class UI extends Emitter {
     if (e) e.textContent = text;
   }
 
-  setFps(v, show) {
-    const c = $('fpsChip');
-    if (c) c.textContent = Math.round(v) + ' fps';
-    let hud = document.getElementById('fpsHud');
-    if (show) {
-      if (!hud) {
-        hud = el('div', '', '');
-        hud.id = 'fpsHud';
-        hud.style.cssText = 'position:fixed;left:6px;bottom:6px;z-index:30;font:700 11px monospace;' +
-          'background:#0008;color:#4dff9b;padding:3px 7px;border-radius:6px;pointer-events:none';
-        document.body.appendChild(hud);
-      }
-      hud.textContent = Math.round(v) + ' fps';
-    } else if (hud) hud.remove();
-  }
+
 }
 
 const FACE_EMOJI = {

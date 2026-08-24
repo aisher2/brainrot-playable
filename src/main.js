@@ -32,7 +32,7 @@ import { UI } from './ui/ui.js';
 const app = {
   ui: null, view: null, input: null, studio: null, mm: null,
   session: null, bot: null, mode: 'menu', matchMode: 'online',
-  raf: 0, last: 0, acc: 0, fps: 60, frameAvg: 16.7,
+  raf: 0, last: 0, acc: 0, frameAvg: 16.7,
   quality: 1, qualityLock: false, qTimer: 0,
   lastCd: -99, slow: 1, ending: false, resultShown: false,
   paused: false, opp: null, localIdx: 0, hostAudioOk: true,
@@ -134,6 +134,9 @@ async function boot() {
   if (!profile.name) ui.showNameEntry();
   else ui.show('menu');
   if (profile.firstRun) { profile.firstRun = false; save(); }
+  /* The label under PLAY carries reachability now. The button label itself
+     follows what this build is *configured* for, so a temporary outage never
+     mislabels PLAY as a bot match it is not going to start. */
   ui.setOnlineAvailable(onlineEnabled());
   probeServer();
   startLoop();
@@ -284,7 +287,6 @@ function wireUI() {
       if (q != null) { app.quality = q; app.view?.setQuality(q); }
     }
     if (k === 'camSens') app.view?.setCamSensitivity(v);
-    if (k === 'showFps' && !v) ui.setFps(0, false);
     if (k === 'serverUrl') probeServer();
     if (k === 'music' || k === 'sfx' || k === 'mute') applyHostAudio();
   });
@@ -350,18 +352,12 @@ async function probeServer() {
   const url = relayUrl(getSetting('serverUrl'));
   if (!url) {
     ui.setOnlineAvailable(false);
-    ui.setNetStatus('', 'solo mode');
     ui.setPlaySub('practice · 60 seconds');
     return;
   }
-  ui.setNetStatus('', 'connecting');
   ui.setPlaySub('online · 1v1 · 60s');
   const r = await app.mm.probe(url, 2500);
-  ui.setNetStatus(r.ok ? 'ok' : 'err', r.ok ? 'online' : 'offline');
   ui.setPlaySub(r.ok ? 'online · 1v1 · 60s' : 'server unreachable');
-  // Reachability drives the status chip only. The button label follows what
-  // this build is *configured* for, so a temporary outage never mislabels
-  // PLAY as a bot match it is not going to start.
   ui.setOnlineAvailable(onlineEnabled());
 }
 
@@ -741,9 +737,7 @@ function stepFrame(dt) {
   dt = Math.min(Math.max(dt, 0), 0.1);
 
   app.frameAvg = app.frameAvg * 0.92 + (dt * 1000) * 0.08;
-  app.fps = 1000 / Math.max(1, app.frameAvg);
   governQuality(dt);
-  if (getSetting('showFps')) app.ui.setFps(app.fps, true);
 
   if (app.mode === 'match' && app.session) {
     // end-of-round slow motion

@@ -145,13 +145,13 @@ canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;background
 }
 /* The top bar and the streak/status chips are absolutely positioned, so the
    button stack has to reserve their space or it grows straight through them. */
-#s-menu{padding-top:calc(58px + var(--safe-t));padding-bottom:calc(64px + var(--safe-b))}
+#s-menu{padding-top:calc(58px + var(--safe-t));padding-bottom:calc(24px + var(--safe-b))}
 /* Short viewports: shave the stack rather than let it collide. */
 /* the tagline is long; on a phone let it sit on one line rather than wrap */
 @media (max-width:420px){ .tagline{letter-spacing:.03em;font-size:10px} }
 @media (max-height:780px){
   /* the mode row costs ~50px; buy it back from the logo rather than let the
-     stack push into the top bar or the footer chips */
+     stack push into the top bar */
   .logo .l1{font-size:clamp(28px,8.5vw,58px)}
   .logo .l3{font-size:clamp(30px,9.4vw,64px)}
   .logo .l2{font-size:clamp(13px,3.8vw,24px)}
@@ -179,10 +179,6 @@ canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;background
 .lvlwho{flex:1;min-width:0;color:var(--white);opacity:.9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;letter-spacing:.06em}
 .xpbar{height:7px;background:#00000066;border-radius:99px;overflow:hidden}
 .xpbar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--ok),var(--p2));border-radius:99px;transition:width .4s ease}
-.menu-foot{position:absolute;bottom:calc(10px + var(--safe-b));display:flex;gap:8px}
-.chip{font-size:10px;letter-spacing:.11em;background:#0000006b;border:2px solid #ffffff24;border-radius:99px;padding:5px 13px;text-transform:uppercase;backdrop-filter:blur(3px)}
-.chip.live{border-color:#4dff9b66;color:var(--ok)}
-.chip.err{border-color:#ff5b5b66;color:var(--bad)}
 
 /* ============ PANEL / DAILY ============ */
 .panel{background:linear-gradient(180deg,#3a1360,#26093f);border:5px solid var(--ink);border-radius:26px;padding:22px;box-shadow:var(--shadow);width:min(92vw,420px);text-align:center}
