@@ -91,6 +91,7 @@
         <button class="btn small" id="btnBoard"><i>🏆</i><span>LEADERBOARD</span></button>
         <button class="btn small" id="btnQuests"><i>🎯</i><span>QUESTS</span></button>
       </div>
+      <button class="btn levels" id="btnLevels"><i>🏁</i><span>LEVELS</span><small id="levelsSub">12 stages</small></button>
       <button class="btn friend" id="btnFriend"><i>🔗</i><span>PLAY WITH A FRIEND</span></button>
       <div class="modepick" id="modePick">
         <span>MODE</span>
@@ -215,6 +216,7 @@
       <div class="crown" id="resultCrown">🏆</div>
       <h2 class="resulttitle" id="resultTitle">WINNER!</h2>
       <div class="winner-name" id="winnerName">PLAYER 1</div>
+      <div class="resultlevel" id="resultLevel" hidden></div>
       <div class="statgrid" id="statGrid"></div>
       <div class="rewards" id="rewardList"></div>
       <div class="btn-row wide">
@@ -229,6 +231,12 @@
     <header class="sheet-head"><button class="icon-btn back">&#8592;</button><h2>BRAINROT COLLECTION</h2><span class="count" id="collectCount">0/0</span></header>
     <div class="filters" id="rarityFilters"></div>
     <div class="grid" id="collectGrid"></div>
+  </section>
+
+  <!-- ---------- LEVELS ---------- -->
+  <section class="screen sheet" id="s-levels">
+    <header class="sheet-head"><button class="icon-btn back">&#8592;</button><h2>LEVELS</h2><span class="count" id="starCount">0</span></header>
+    <div class="lvlgrid" id="levelGrid"></div>
   </section>
 
   <!-- ---------- CUSTOMIZE ---------- -->

@@ -10,10 +10,12 @@ import {
   profile, store, levelInfo, displayName, setName, tryEquip, isUnlocked,
   todaysChallenges, achievementList,
   collectedCount, setSetting, getSetting, save,
+  levelStars, levelUnlocked, totalStars,
 } from '../core/storage.js';
 import { BRAINROTS, RARITY, RARITY_ORDER, BRAINROT_BY_ID } from '../data/brainrots.js';
 import { SLOTS, findItem, unlockText } from '../data/cosmetics.js';
 import { msUntilMidnight, xpForLevel, MAX_LEVEL } from '../data/progression.js';
+import { LEVELS, LEVEL_COUNT, goalText } from '../data/levels.js';
 import { fetchBoard } from '../net/leaderboard.js';
 import { CONFIG } from '../core/platform.js';
 import { sfx } from '../core/audio.js';
@@ -77,7 +79,7 @@ const BOOT_TIPS = [
 
 const BOOT_FACES = ['🧠', '🍌', '👑', '🦵', '💨', '😵', '🤪', '🤯', '🥴'];
 
-const SCREENS = ['menu', 'name', 'friend', 'search', 'hud', 'result', 'collect', 'custom', 'board', 'quests', 'settings'];
+const SCREENS = ['menu', 'name', 'friend', 'search', 'hud', 'result', 'collect', 'custom', 'board', 'quests', 'settings', 'levels'];
 
 /** rAF, but with a timer fallback: background tabs stop firing rAF and
     thumbnails would then never appear. */
@@ -190,6 +192,7 @@ export class UI extends Emitter {
       case 'custom':   this.renderCustomize(); break;
       case 'board':    this.renderBoard(); break;
       case 'quests':   this.renderQuests(); break;
+      case 'levels':   this.renderLevels(); break;
       case 'settings': this.renderSettings(); break;
       default: break;
     }
@@ -218,6 +221,7 @@ export class UI extends Emitter {
     click('btnSettings', () => this.show('settings', { push: true }));
     click('btnCancelSearch', () => this.emit('cancel'));
     click('btnSoloOffer', () => this.emit('playSolo'));
+    click('btnLevels', () => this.show('levels', { push: true }));
     click('btnFriend', () => this.showFriend());
     click('btnNameOk', () => this._confirmName());
     for (const b of document.querySelectorAll('#modePick button')) {
@@ -687,9 +691,31 @@ export class UI extends Emitter {
   }
 
   /* ==================================================== results */
+  /**
+   * A level round is judged on its own goal, not just on who won: you can
+   * take the round and still miss a SCORE target, so say which it was.
+   */
+  _levelOutcome(lv) {
+    const host = $('resultLevel');
+    if (!host) return;
+    host.textContent = '';
+    host.hidden = !lv;
+    if (!lv) return;
+
+    host.appendChild(el('span', 'rl-name', 'LEVEL ' + lv.id + ' · ' + lv.name));
+    const row = el('span', 'rl-stars');
+    for (let i = 0; i < 3; i++) row.appendChild(el('i', i < lv.stars ? 'on' : '', '★'));
+    host.appendChild(row);
+    host.appendChild(el('span', 'rl-note',
+      lv.stars === 0 ? 'GOAL MISSED · ' + lv.goal
+        : lv.improved ? (lv.next ? 'CLEARED · LEVEL ' + lv.next + ' UNLOCKED' : 'CLEARED')
+        : 'BEST ' + lv.best + '/3'));
+  }
+
   showResult(data) {
     this.show('result');
     const { result, myStats, theirStats, rewards, unlocked, challenges, achievements, newBrainrot, levelUp } = data;
+    this._levelOutcome(data.level);
 
     const crown = $('resultCrown');
     const title = $('resultTitle');
@@ -745,6 +771,33 @@ export class UI extends Emitter {
   }
 
   /* ==================================================== collection */
+  renderLevels() {
+    const host = $('levelGrid');
+    if (!host) return;
+    host.textContent = '';
+    const total = $('starCount');
+    if (total) total.textContent = '⭐ ' + totalStars() + '/' + (LEVEL_COUNT * 3);
+
+    for (const lv of LEVELS) {
+      const stars = levelStars(lv.id);
+      const open = levelUnlocked(lv.id);
+      const tile = el('button', 'lvltile' + (open ? '' : ' locked') + (stars ? ' done' : ''));
+      tile.disabled = !open;
+
+      tile.appendChild(el('b', 'lvlno', open ? String(lv.id) : '🔒'));
+      tile.appendChild(el('span', 'lvlname', open ? lv.name : 'LOCKED'));
+      tile.appendChild(el('span', 'lvlgoal',
+        open ? (lv.variant === 'tagbomb' ? '💣 ' : '🧠 ') + goalText(lv) : ''));
+      // three slots always, so a tile does not change height once it is cleared
+      const row = el('span', 'lvlstars');
+      for (let i = 0; i < 3; i++) row.appendChild(el('i', i < stars ? 'on' : '', '★'));
+      tile.appendChild(row);
+
+      if (open) tile.addEventListener('click', () => { sfx.ui(); this.emit('level', lv.id); });
+      host.appendChild(tile);
+    }
+  }
+
   renderCollection() {
     const filters = $('rarityFilters');
     if (filters && !filters.children.length) {

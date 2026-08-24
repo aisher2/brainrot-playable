@@ -13,9 +13,13 @@ import { RNG, clamp } from '../core/util.js';
 const PILLAR_CACHE = PILLARS;
 
 const DIFFS = {
+  /* rookie and brutal exist for the level ladder: the three middle tiers
+     alone make the first levels punishing and the last ones a formality. */
+  rookie: { react: 0.50, aim: 0.40, dashRange: 2.0, dashChance: 0.30, wander: 1.25, speed: 0.74 },
   chill:  { react: 0.34, aim: 0.55, dashRange: 2.6, dashChance: 0.55, wander: 0.9,  speed: 0.86 },
   normal: { react: 0.20, aim: 0.78, dashRange: 3.4, dashChance: 0.8,  wander: 0.55, speed: 0.96 },
   sweaty: { react: 0.10, aim: 0.94, dashRange: 4.2, dashChance: 0.95, wander: 0.28, speed: 1.0  },
+  brutal: { react: 0.06, aim: 0.99, dashRange: 4.8, dashChance: 1.00, wander: 0.12, speed: 1.0  },
 };
 
 export class BotAI {

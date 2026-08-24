@@ -9,6 +9,7 @@ import {
   initStorage, profile, publicProfile, displayName, setName, addCoins, addXp,
   applyMatchStats, recordResult, refreshUnlocks, collect, levelInfo,
   getSetting, setSetting, save, flush, storageBackend, store,
+  levelStars, setLevelStars,
 } from './core/storage.js';
 import { Input } from './core/input.js';
 import {
@@ -20,6 +21,7 @@ import { Studio } from './gfx/studio.js';
 import { GameView } from './game/view.js';
 import { createSession, HostSession } from './game/match.js';
 import { setArena, mapForSeed, currentMap } from './game/arena.js';
+import { levelById, starsEarned, goalText } from './data/levels.js';
 import { CFG, DT, EVENTS, ABILITIES } from './game/sim.js';
 import { Matchmaker, CancelError } from './net/netclient.js';
 import { CONFIG, relayUrl, onlineEnabled, yt } from './core/platform.js';
@@ -197,6 +199,10 @@ function wireUI() {
   // through to practice, and in that build the button is labelled PLAY VS BOT.
   ui.on('play', () => startMatch(onlineEnabled() ? 'online' : 'practice'));
   ui.on('practice', () => startMatch('practice', { variant: getSetting('variant') || 'classic' }));
+  ui.on('level', (id) => {
+    const lv = levelById(id);
+    if (lv) startMatch('practice', { variant: lv.variant, level: lv });
+  });
   // "the queue is empty, just let me play" - keeps a lone visitor from
   // ever hitting a dead end on the search screen
   ui.on('playSolo', () => { app.mm.cancel(); startMatch('practice'); });
@@ -371,6 +377,7 @@ async function beginMatch(opts) {
 
 async function startMatch(mode, opts = {}) {
   endSession();
+  app.level = opts.level || null;
   app.matchMode = mode === 'friend' ? 'online' : mode;
   app.ending = false;
   app.resultShown = false;
@@ -405,7 +412,7 @@ async function startMatch(mode, opts = {}) {
       variant: opts.variant || getSetting('variant') || 'classic',
       serverUrl: relayUrl(getSetting('serverUrl')),
       profile: publicProfile(),
-      difficulty: pickDifficulty(),
+      difficulty: opts.level ? opts.level.diff : pickDifficulty(),
       humanHost: new URLSearchParams(location.search).get('role') !== 'client',
       lagMs: Number(new URLSearchParams(location.search).get('lag')) || 0,
     });
@@ -431,7 +438,10 @@ async function startMatch(mode, opts = {}) {
   // Bake the arena before the opponent-found pause rather than after it: the
   // work then overlaps a wait the player is already sitting through, instead
   // of adding a visible hitch on a phone right as the round starts.
-  const map = setArena(mapForSeed(info.seed));
+  /* A level pins its map: rolling one from the seed would make the same
+     level a different challenge on every attempt, and a 3-star run would
+     not mean the same thing twice. */
+  const map = setArena(opts.level ? opts.level.map : mapForSeed(info.seed));
   if (map) app.view.rebuildArena();
   app.map = currentMap();
 
@@ -559,6 +569,24 @@ async function onRoundEnded(data) {
 
   submitScore(me.score, { won: won ? 1 : 0, hold: Math.round(me.holdTime * 10) / 10 });
 
+  /* --- level ladder --- */
+  let levelResult = null;
+  if (app.level) {
+    const stars = starsEarned(app.level, { won, stats: me });
+    const best = levelStars(app.level.id);
+    if (stars > 0) setLevelStars(app.level.id, stars);
+    levelResult = {
+      id: app.level.id,
+      name: app.level.name,
+      goal: goalText(app.level),
+      stars,
+      best: Math.max(best, stars),
+      improved: stars > best,
+      // the next level only exists if this one was actually cleared
+      next: stars > 0 && levelById(app.level.id + 1) ? app.level.id + 1 : 0,
+    };
+  }
+
   await wait(900);
   // the menu theme returns under the results screen
   if (getSetting('music') && app.hostAudioOk !== false) startMenuMusic();
@@ -573,6 +601,7 @@ async function onRoundEnded(data) {
     achievements: achievementsUnlocked,
     newBrainrot: { def, isNew },
     levelUp: afterLevel > beforeLevel ? afterLevel : 0,
+    level: levelResult,
     streak,
   });
   playBrainrotSfx(def.sfx, 0.8);

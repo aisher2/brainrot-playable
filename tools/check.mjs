@@ -389,5 +389,46 @@ try {
   bad++;
 }
 
+/* ---- the level ladder: goals, star thresholds and the unlock chain ---- */
+try {
+  const L = await import(pathToFileURL(path.join(SRC, 'data/levels.js')).href);
+  const { LEVELS, starsEarned, levelById } = L;
+
+  if (LEVELS.length < 8) throw new Error('ladder is suspiciously short');
+  const ids = LEVELS.map((l) => l.id);
+  if (ids.some((v, i) => v !== i + 1)) throw new Error('level ids must run 1..n with no gaps');
+  for (const lv of LEVELS) {
+    if (!['classic', 'tagbomb'].includes(lv.variant)) throw new Error(`level ${lv.id}: bad variant`);
+    if (!(lv.map >= 0 && lv.map < 5)) throw new Error(`level ${lv.id}: map out of range`);
+    if (!(lv.stars[1] > lv.stars[0])) throw new Error(`level ${lv.id}: 3-star target must beat 2-star`);
+  }
+
+  // a missed goal earns nothing, which is what keeps the next level shut
+  const l2 = levelById(2);            // goal: score 22
+  if (starsEarned(l2, { won: true, stats: { score: 10 } }) !== 0) {
+    throw new Error('level 2 cleared despite missing its score goal');
+  }
+  if (starsEarned(l2, { won: false, stats: { score: 25 } }) !== 1) {
+    throw new Error('level 2 should clear on score alone, win or not');
+  }
+  if (starsEarned(l2, { won: true, stats: { score: 41 } }) !== 3) {
+    throw new Error('level 2 should be worth 3 stars at its top threshold');
+  }
+
+  // a TAG BOMB level is judged on tags, not score
+  const l5 = levelById(5);            // goal: 2 tags
+  if (starsEarned(l5, { won: false, stats: { score: 99, tags: 0 } }) !== 0) {
+    throw new Error('score must not clear a tags goal');
+  }
+  if (starsEarned(l5, { won: false, stats: { score: 0, tags: 5 } }) !== 3) {
+    throw new Error('5 tags should be worth 3 stars on level 5');
+  }
+  console.log(`  levels ${LEVELS.length} stages, goals and star thresholds all consistent`);
+  ok++;
+} catch (e) {
+  console.error('  FAIL  level ladder\n        ' + e.message);
+  bad++;
+}
+
 console.log(`\n${bad ? '❌' : '✅'} ${ok} passed, ${bad} failed`);
 process.exit(bad ? 1 : 0);

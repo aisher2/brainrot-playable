@@ -77,6 +77,7 @@ function freshProfile() {
     challenges: { day: null, progress: {}, claimed: [] },
     achievements: {},        // id -> true when unlocked
     board: [],               // local high scores
+    levels: {},              // level id -> stars earned (1-3)
     settings: {
       music: true, sfx: true, shake: true,
       quality: 'auto',       // auto | low | medium | high
@@ -238,6 +239,24 @@ export function refreshUnlocks() {
 }
 
 /* ---------- brainrot collection ---------- */
+/* ---------- level ladder ---------- */
+export const levelStars = (id) => profile.levels[id] || 0;
+
+/** A level opens once the one before it has been cleared. */
+export const levelUnlocked = (id) => id <= 1 || (profile.levels[id - 1] || 0) > 0;
+
+export const totalStars = () =>
+  Object.values(profile.levels).reduce((a, b) => a + (b || 0), 0);
+
+/** Only ever improves a score, so a sloppy replay cannot cost you stars. */
+export function setLevelStars(id, n) {
+  if (!(n > (profile.levels[id] || 0))) return false;
+  profile.levels[id] = n;
+  save();
+  store.emit('levels', id);
+  return true;
+}
+
 export function collect(id) {
   const isNew = !profile.collection[id];
   profile.collection[id] = (profile.collection[id] || 0) + 1;

@@ -1203,6 +1203,7 @@ export function statsFor(s, idx) {
     losses: s.winner === 1 - idx ? 1 : 0,
     draws: s.winner === -1 ? 1 : 0,
     score: p.score,
+    tags: p.tags,
     holdTime: p.holdTime,
     longestHold: p.longestHold,
     steals: p.steals,
