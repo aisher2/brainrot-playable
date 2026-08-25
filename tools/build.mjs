@@ -276,31 +276,14 @@ html = html
   .replace(/\n<link rel="apple-touch-icon"[^>]*>/, '');
 if (html.includes('styles.css')) fail('the stylesheet is still an external request');
 
-/* Matches Google's own plain-html-js-css sample exactly:
-
-     <link rel="stylesheet" ...>
-     <script src="https://www.youtube.com/game_api/v1"></script>
-     <script src="main.js"></script>
-
-   The game script is an ordinary synchronous tag in the head directly after
-   the SDK - no defer, no dynamic injection. That sample is the reference
-   implementation and it passes certification, which rules out the two things
-   I had been engineering around: its stylesheet also precedes the SDK, and
-   its game script is just as visible to the preload scanner as ours was. So
-   the clever loader goes, and we take the shape that is known to work. */
-/* defer, not synchronous.
-
-   The reference sample loads its game script synchronously in the head,
-   and copying that verbatim cost 2.8 seconds: their main.js is 15 KiB and
-   ours is 106 KiB, so a parser-blocking tag holds up <body> - and with it
-   the loading screen - until the whole bundle has downloaded and run. The
-   harness measured 1.657s before the change and 4.44s after, against a 5s
-   limit. It also made no difference to the SDK check, which failed the
-   same way either way, so there is nothing to weigh against the cost.
-
-   defer keeps the SDK the first script and the first thing to execute,
-   which is what the requirement actually asks for. */
-const loader = `<script src="bundle.js?v=${stamp(bundle)}" defer></script>`;
+/* Do not expose bundle.js as a static script tag. Browsers' preload scanners
+   fetch deferred scripts before the preceding SDK has finished downloading,
+   and the Playables Test Suite correctly treats that as game code loading
+   before the SDK. This tiny loader runs only after the SDK's parser-blocking
+   tag has downloaded and executed, then starts the game bundle. main.js
+   already waits for DOMContentLoaded, so a dynamically loaded bundle cannot
+   race page construction. */
+const loader = `<script>(function(){var s=document.createElement('script');s.src='bundle.js?v=${stamp(bundle)}';document.head.appendChild(s)}())</script>`;
 
 const hashed = html
   .replace('<script src="bundle.js" defer></script>', '')
