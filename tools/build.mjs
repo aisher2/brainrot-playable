@@ -276,14 +276,12 @@ html = html
   .replace(/\n<link rel="apple-touch-icon"[^>]*>/, '');
 if (html.includes('styles.css')) fail('the stylesheet is still an external request');
 
-/* Do not expose bundle.js as a static script tag. Browsers' preload scanners
-   fetch deferred scripts before the preceding SDK has finished downloading,
-   and the Playables Test Suite correctly treats that as game code loading
-   before the SDK. This tiny loader runs only after the SDK's parser-blocking
-   tag has downloaded and executed, then starts the game bundle. main.js
-   already waits for DOMContentLoaded, so a dynamically loaded bundle cannot
-   race page construction. */
-const loader = `<script>(function(){var s=document.createElement('script');s.src='bundle.js?v=${stamp(bundle)}';document.head.appendChild(s)}())</script>`;
+/* Keep the SDK and game bundle as the reference sample does: two ordinary,
+   parser-blocking scripts in order. The Test Suite treats an inline loader as
+   game code, and a deferred bundle can be fetched before the SDK completes.
+   This costs some parallel download time but makes the execution contract
+   unambiguous: game code cannot be parsed or executed until the SDK is done. */
+const loader = `<script src="bundle.js?v=${stamp(bundle)}"></script>`;
 
 const hashed = html
   .replace('<script src="bundle.js" defer></script>', '')
