@@ -266,8 +266,23 @@ const stamp = (buf) => crypto.createHash('sha256').update(buf).digest('hex').sli
    because that one blocks the parser. The cost is real: the bundle can no
    longer download in parallel with the SDK. Correctness wins here, and
    gameReady still lands well inside the 5 second guidance. */
-const loader = `<script>document.head.appendChild(Object.assign(`
-  + `document.createElement('script'),{src:'bundle.js?v=${stamp(bundle)}',defer:true}));</script>`;
+/* Waits for the SDK to actually answer before fetching the game.
+
+   game_api/v1 is only a loader: it stands up window.ytgame, then pulls the
+   real SDK asynchronously. Attaching the bundle straight after that stub was
+   not enough - the harness reports "SDK script was not loaded before any game
+   code" at the moment the *real* SDK initialises, and by then bundle.js was
+   already in the resource timeline. So the probe here is a real round trip to
+   the host (getLanguage), which cannot resolve until the SDK is genuinely up.
+
+   The 2.5s cap matters: outside the Playables host nothing will ever answer,
+   and the game still has to boot. */
+const loader = `<script>(function(){var a=function(){document.head.appendChild(`
+  + `Object.assign(document.createElement('script'),`
+  + `{src:'bundle.js?v=${stamp(bundle)}',defer:true}));},d=0,`
+  + `g=function(){if(!d){d=1;a();}};setTimeout(g,2500);try{var y=window.ytgame;`
+  + `if(y&&y.system&&y.system.getLanguage){Promise.resolve(y.system.getLanguage())`
+  + `.then(g,g);}else{g();}}catch(e){g();}})();</script>`;
 const hashed = html
   .replace('<script src="bundle.js" defer></script>', '')
   .replace('<script src="https://www.youtube.com/game_api/v1"></script>',
