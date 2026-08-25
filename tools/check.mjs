@@ -359,6 +359,10 @@ try {
   if (!scripts[0].includes('game_api/v1')) {
     throw new Error('the first script is not the Playables SDK');
   }
+  // the reference template declares the encoding before anything else
+  if (page.indexOf('charset') > page.indexOf('<script')) {
+    throw new Error('<meta charset> must come before the first script');
+  }
   if (!scripts[1].includes('bundle.js')) {
     throw new Error('the second script is not the game bundle');
   }

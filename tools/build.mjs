@@ -214,11 +214,14 @@ html = html.replace(cfgRe, '');
 
 html = html.replace(/\n\s*<!--[\s\S]*?-->/g, '');           // strip layout comments
 
-/* The SDK is the one external request the Playables rules allow, and it MUST
-   execute before any game code - the certification suite checks exactly
-   that. It goes immediately after <head>, ahead of the STB_CONFIG inline
-   script, which counts as game code and was previously running first. */
-html = html.replace('<head>', '<head>\n<script src="https://www.youtube.com/game_api/v1"></script>');
+/* Placed to match Google's own Playables template exactly: <meta charset>
+   and the rest of the head come first, then the SDK as the last thing in the
+   head - which still makes it the first *script* on the page, since nothing
+   else in the head is a script any more. Putting it above <meta charset> (as
+   I did briefly) is a deviation from the reference and leaves the encoding
+   declaration behind a script, so it is not worth the ambiguity. */
+html = html.replace('</head>', '<script src="https://www.youtube.com/game_api/v1"></script>\n</head>');
+
 if (html.includes('STB_CONFIG')) fail('STB_CONFIG must not be inline in the page');
 if ((html.match(/<script/g) || []).length !== 2) {
   fail('the page must contain exactly two scripts: the SDK and the bundle');
