@@ -288,7 +288,19 @@ if (html.includes('styles.css')) fail('the stylesheet is still an external reque
    I had been engineering around: its stylesheet also precedes the SDK, and
    its game script is just as visible to the preload scanner as ours was. So
    the clever loader goes, and we take the shape that is known to work. */
-const loader = `<script src="bundle.js?v=${stamp(bundle)}"></script>`;
+/* defer, not synchronous.
+
+   The reference sample loads its game script synchronously in the head,
+   and copying that verbatim cost 2.8 seconds: their main.js is 15 KiB and
+   ours is 106 KiB, so a parser-blocking tag holds up <body> - and with it
+   the loading screen - until the whole bundle has downloaded and run. The
+   harness measured 1.657s before the change and 4.44s after, against a 5s
+   limit. It also made no difference to the SDK check, which failed the
+   same way either way, so there is nothing to weigh against the cost.
+
+   defer keeps the SDK the first script and the first thing to execute,
+   which is what the requirement actually asks for. */
+const loader = `<script src="bundle.js?v=${stamp(bundle)}" defer></script>`;
 
 const hashed = html
   .replace('<script src="bundle.js" defer></script>', '')
