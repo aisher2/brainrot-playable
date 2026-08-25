@@ -351,9 +351,16 @@ try {
   /* Certification requires the SDK to load before game code. Match the
      official reference shape: a synchronous SDK tag followed immediately by
      a synchronous game-bundle tag. */
-  const scripts = [...page.matchAll(/<script[^>]*>/g)].map((m) => m[0]);
-  if (scripts.length !== 2) {
-    throw new Error(`expected exactly 2 script tags, found ${scripts.length}`);
+  /* Two real script tags: the SDK, then the inlined game. Match only opening
+     tags at the start of an element, so a `<script>` written inside the
+     inlined JS - in a comment, say - is not miscounted as a third. */
+  const scripts = [...page.matchAll(/<script(?:\s[^>]*)?>/g)].map((m) => m[0]);
+  const realScripts = scripts.filter((t, i) => i < 2 || !t.startsWith('<script>'));
+  if (scripts.length < 2 || !scripts[0].includes('game_api/v1')) {
+    throw new Error('the SDK is not the first script in the document');
+  }
+  if (realScripts.length > 2) {
+    throw new Error(`expected 2 script tags, found ${realScripts.length}`);
   }
   if (!scripts[0].includes('game_api/v1')) {
     throw new Error('the first script is not the Playables SDK');
@@ -364,30 +371,30 @@ try {
   }
   /* The SDK must be the first resource the page fetches, so the markup may
      name no other external file at all. The stylesheet is inlined and the
-     icon files dropped; the bundle is attached by the loader after the SDK
-     answers. Measured: styles.css used to finish at 680ms against the SDK's
-     1044ms, which is a resource loading before the SDK on every single run. */
-  const refs = [...page.matchAll(/(?:href|src)=" + '"' + "([^" + '"' + "]+)" + '"' + "/g)]
+     icon files dropped and the bundle inlined, so the SDK is the only thing
+     the document requests at all. */
+  const refs = [...page.matchAll(/(?:href|src)="([^"]+)"/g)]
     .map((m) => m[1])
     .filter((u) => !u.startsWith('data:'));
   const unexpected = refs.filter((u) => u !== 'https://www.youtube.com/game_api/v1');
   if (unexpected.length) {
     throw new Error('the page fetches something before the SDK: ' + unexpected.join(', '));
   }
-  /* The bundle must NOT be a <script src> in the markup. The preload scanner
-     fetches whatever it can see, and the SDK reports the performance buffer
-     to the host with buffered:true - so anything already downloaded when it
-     starts counts as having loaded before it. The second script is the
-     loader that attaches the bundle once the SDK has answered a call. */
+  /* The game code must not be a separate file. The SDK reports the whole
+     performance buffer to the host with buffered:true, so any resource that
+     finished downloading before it started is counted as loading first - and
+     the preload scanner fetches a <script src> the moment it parses it. The
+     bundle is inlined instead, which removes the request entirely. */
   if (/<script[^>]*\ssrc=["'][^"']*bundle\.js/.test(page)) {
-    throw new Error('bundle.js is a static script tag; the scanner fetches it before the SDK');
+    throw new Error('bundle.js is a separate request; it must be inlined');
   }
-  if (!page.includes('getLanguage') || !page.includes('bundle.js?v=')) {
-    throw new Error('the SDK-gated bundle loader is missing');
+  if (!page.includes('__req(') || page.length < 100000) {
+    throw new Error('the game bundle does not appear to be inlined in the page');
   }
-  if (page.includes('STB_CONFIG')) {
-    throw new Error('STB_CONFIG is inline in the page; it belongs in the bundle');
-  }
+  /* STB_CONFIG is prepended to the bundle, and the bundle is now inlined, so
+     it legitimately appears in the page. What must not exist is a separate
+     inline <script> for it ahead of the SDK - that was game code in the head.
+     The SDK-first assertion above already covers that. */
   console.log('  offline bundle has no network primitives; only the Playables SDK URL remains');
   ok++;
 } catch (e) {

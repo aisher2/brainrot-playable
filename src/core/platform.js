@@ -4,7 +4,7 @@
    Two jobs:
 
    1. CONFIG - a handful of switches the deployed page can set
-      without a rebuild (see the inline <script> in index.html).
+      without a rebuild; the build prepends them to the bundle.
 
    2. A safe adapter over `window.ytgame`. Every call is a no-op when
       the SDK is absent, so the exact same build runs on your own

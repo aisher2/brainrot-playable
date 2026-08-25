@@ -277,42 +277,34 @@ html = html
 if (html.includes('styles.css')) fail('the stylesheet is still an external request');
 
 /* The bundle is attached only once the SDK has answered a call.
+/* The game code is inlined, so it is never a resource at all.
 
-   This is not a guess about ordering any more. The SDK's own source shows how
-   the Test Suite learns about resources:
+   The SDK reports resources to the host through a PerformanceObserver
+   started with `buffered: true`, which hands it everything already sitting
+   in the performance buffer and skips only youtube.com/game_api URLs. Every
+   earlier attempt tried to win a race against that - reorder the tag, defer
+   it, inject it once the SDK had answered a call. Each narrowed the window
+   without closing it, because a separate file is always a resource that can
+   land in that batch.
 
-     .observe({type: "resource", buffered: true})
-
-   installed on a PerformanceObserver that forwards every resource entry to the
-   host, skipping only youtube.com/game_api URLs. `buffered: true` is the part
-   that matters: when that observer starts it is handed everything already in
-   the performance buffer. The events carry name and byte sizes but no
-   timestamps, so the host cannot compare load times - what it can see is
-   whether that first replayed batch was empty. Anything already downloaded by
-   the time the SDK stood up arrives in it, and that is "game code loaded
-   before the SDK".
-
-   A plain <script src> in the markup loses this by default: the preload
-   scanner fetches it the moment it is parsed, so a small same-origin bundle
-   routinely finishes before a 65 KiB cross-origin SDK, no matter which tag
-   comes first in the document. Reordering tags cannot fix it. Nothing else is
-   left to race - the stylesheet is inlined above and the icon files dropped -
-   so the bundle is the only entry that can land in that batch.
-
-   Waiting on system.getLanguage() is the signal, not a timer: it is a real
-   round trip that cannot resolve until the SDK is up and talking to the host,
-   which is necessarily after its observer exists. The timeout is only a
-   fallback so an ordinary web deploy, where nothing will ever answer, still
-   boots. */
-const loader = `<script>(function(){var done=0,attach=function(){if(done)return;done=1;var s=document.createElement('script');s.src='bundle.js?v=${stamp(bundle)}';document.head.appendChild(s);};setTimeout(attach,2000);try{var y=window.ytgame;if(y&&y.system&&y.system.getLanguage){Promise.resolve(y.system.getLanguage()).then(attach,attach);}else{attach();}}catch(e){attach();}}());</script>`;
+   There is no race if there is no request. The bundle goes in as an inline
+   script at the end of <body>, leaving the SDK as the only thing the
+   document fetches. End of body also keeps first paint quick: the markup and
+   the loading screen parse before the script is reached, which a
+   parser-blocking 106 KiB tag in the head did not - that cost 2.8s. */
+/* Inlining is only safe while the bundle contains no closing script tag: the
+   HTML parser would end the block at the first one and dump the rest of the
+   game into the document as text. Nothing produces one today, but a stray
+   string in future source would break the page silently. */
+if (/<\/script/i.test(bundle)) {
+  fail('the bundle contains a closing script tag and cannot be inlined');
+}
+const inlineBundle = '<script>' + bundle + '</script>';
 
 const hashed = html
   .replace('<script src="bundle.js" defer></script>', '')
-  .replace('<script src="https://www.youtube.com/game_api/v1"></script>',
-           '<script src="https://www.youtube.com/game_api/v1"></script>\n' + loader)
-  .replace('<link rel="stylesheet" href="styles.css">',
-           `<link rel="stylesheet" href="styles.css?v=${stamp(css)}">`);
-if (hashed === html) fail('could not stamp the asset urls in index.html');
+  .replace('</body>', inlineBundle + '\n</body>');
+if (hashed === html) fail('could not inline the bundle into index.html');
 fs.writeFileSync(path.join(DIST, 'index.html'), hashed);
 
 
