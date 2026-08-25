@@ -375,16 +375,16 @@ try {
   if (unexpected.length) {
     throw new Error('the page fetches something before the SDK: ' + unexpected.join(', '));
   }
-  /* The bundle must NOT appear as a <script src> in the markup. The preload
-     scanner fetches whatever it can see, which had the game code finishing
-     its download 725ms before the SDK finished its own - "loaded before the
-     SDK" in the only sense that check can mean. It is attached by the loader
-     below the SDK instead, so it is not requested until the SDK has run. */
-  if (/<script[^>]*\ssrc=["'][^"']*bundle\.js/.test(page)) {
-    throw new Error('bundle.js is a static <script src>; the scanner will fetch it before the SDK');
+  /* Structure taken from google/web-game-samples plain-html-js-css, which is
+     the reference implementation: the SDK, then the game script, both plain
+     synchronous tags in the head. Earlier revisions here asserted the bundle
+     must NOT be a static script tag - that was wrong, the sample proves an
+     ordinary tag is fine, so the assertion is now the sample's own shape. */
+  if (!scripts[1].includes("bundle.js")) {
+    throw new Error("the second script is not the game bundle");
   }
-  if (!page.includes('createElement') || !page.includes('bundle.js?v=')) {
-    throw new Error('the bundle loader is missing from the page');
+  if (/\sdefer|\sasync/.test(scripts[1])) {
+    throw new Error("the game script should be synchronous, as in the sample");
   }
   if (page.includes('STB_CONFIG')) {
     throw new Error('STB_CONFIG is inline in the page; it belongs in the bundle');

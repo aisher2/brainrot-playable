@@ -266,40 +266,30 @@ const stamp = (buf) => crypto.createHash('sha256').update(buf).digest('hex').sli
    because that one blocks the parser. The cost is real: the bundle can no
    longer download in parallel with the SDK. Correctness wins here, and
    gameReady still lands well inside the 5 second guidance. */
-/* Waits for the SDK to actually answer before fetching the game.
-
-   game_api/v1 is only a loader: it stands up window.ytgame, then pulls the
-   real SDK asynchronously. Attaching the bundle straight after that stub was
-   not enough - the harness reports "SDK script was not loaded before any game
-   code" at the moment the *real* SDK initialises, and by then bundle.js was
-   already in the resource timeline. So the probe here is a real round trip to
-   the host (getLanguage), which cannot resolve until the SDK is genuinely up.
-
-   The 2.5s cap matters: outside the Playables host nothing will ever answer,
-   and the game still has to boot. */
-/* Every subresource the markup names is fetched by the preload scanner, and
-   the small ones always win the race against a cross-origin SDK. Measured on
-   the deployed page: styles.css finished at 680ms, the SDK at 1044ms. If the
-   check counts any resource loading before the SDK - not just scripts - that
-   stylesheet has been failing it from the very first attempt, which is also
-   why moving script tags around never moved the result.
-
-   So the CSS is inlined and the two icon files dropped (the data: URI icon
-   already in the head covers the tab). What is left to fetch is the SDK, and
-   then the bundle, which the loader below only attaches once the SDK has
-   answered. Nothing can precede it. */
+/* The stylesheet is inlined and the icon files dropped. Google's sample does
+   keep an external stylesheet, so this is not required for certification -
+   but it removes a round trip on first load and leaves the SDK as the only
+   external file the markup names, which costs nothing to keep. */
 html = html
   .replace(/<link rel="stylesheet" href="styles\.css[^"]*">/, '<style>' + css + '</style>')
   .replace(/\n<link rel="icon" href="favicon\.ico"[^>]*>/, '')
   .replace(/\n<link rel="apple-touch-icon"[^>]*>/, '');
 if (html.includes('styles.css')) fail('the stylesheet is still an external request');
 
-const loader = `<script>(function(){var a=function(){document.head.appendChild(`
-  + `Object.assign(document.createElement('script'),`
-  + `{src:'bundle.js?v=${stamp(bundle)}',defer:true}));},d=0,`
-  + `g=function(){if(!d){d=1;a();}};setTimeout(g,2500);try{var y=window.ytgame;`
-  + `if(y&&y.system&&y.system.getLanguage){Promise.resolve(y.system.getLanguage())`
-  + `.then(g,g);}else{g();}}catch(e){g();}})();</script>`;
+/* Matches Google's own plain-html-js-css sample exactly:
+
+     <link rel="stylesheet" ...>
+     <script src="https://www.youtube.com/game_api/v1"></script>
+     <script src="main.js"></script>
+
+   The game script is an ordinary synchronous tag in the head directly after
+   the SDK - no defer, no dynamic injection. That sample is the reference
+   implementation and it passes certification, which rules out the two things
+   I had been engineering around: its stylesheet also precedes the SDK, and
+   its game script is just as visible to the preload scanner as ours was. So
+   the clever loader goes, and we take the shape that is known to work. */
+const loader = `<script src="bundle.js?v=${stamp(bundle)}"></script>`;
+
 const hashed = html
   .replace('<script src="bundle.js" defer></script>', '')
   .replace('<script src="https://www.youtube.com/game_api/v1"></script>',
