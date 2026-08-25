@@ -359,12 +359,25 @@ try {
   if (!scripts[0].includes('game_api/v1')) {
     throw new Error('the first script is not the Playables SDK');
   }
-  // the reference template declares the encoding before anything else
+  // charset first, then the SDK, then everything else
   if (page.indexOf('charset') > page.indexOf('<script')) {
     throw new Error('<meta charset> must come before the first script');
   }
-  if (!scripts[1].includes('bundle.js')) {
-    throw new Error('the second script is not the game bundle');
+  /* A pending stylesheet blocks every script after it, so a <link> above the
+     SDK delays the one thing that must load first. */
+  if (page.indexOf('<link rel="stylesheet"') < page.indexOf('game_api/v1')) {
+    throw new Error('a stylesheet precedes the SDK and would block it');
+  }
+  /* The bundle must NOT appear as a <script src> in the markup. The preload
+     scanner fetches whatever it can see, which had the game code finishing
+     its download 725ms before the SDK finished its own - "loaded before the
+     SDK" in the only sense that check can mean. It is attached by the loader
+     below the SDK instead, so it is not requested until the SDK has run. */
+  if (/<script[^>]*\ssrc=["'][^"']*bundle\.js/.test(page)) {
+    throw new Error('bundle.js is a static <script src>; the scanner will fetch it before the SDK');
+  }
+  if (!page.includes('createElement') || !page.includes('bundle.js?v=')) {
+    throw new Error('the bundle loader is missing from the page');
   }
   if (page.includes('STB_CONFIG')) {
     throw new Error('STB_CONFIG is inline in the page; it belongs in the bundle');

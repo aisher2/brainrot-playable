@@ -214,13 +214,20 @@ html = html.replace(cfgRe, '');
 
 html = html.replace(/\n\s*<!--[\s\S]*?-->/g, '');           // strip layout comments
 
-/* Placed to match Google's own Playables template exactly: <meta charset>
-   and the rest of the head come first, then the SDK as the last thing in the
-   head - which still makes it the first *script* on the page, since nothing
-   else in the head is a script any more. Putting it above <meta charset> (as
-   I did briefly) is a deviation from the reference and leaves the encoding
-   declaration behind a script, so it is not worth the ambiguity. */
-html = html.replace('</head>', '<script src="https://www.youtube.com/game_api/v1"></script>\n</head>');
+/* The SDK goes immediately after <meta charset>, ahead of everything else in
+   the head.
+
+   Two reasons it is not simply last-in-head like the reference template. A
+   pending stylesheet blocks execution of any script that follows it, so with
+   the <link> above it the SDK could not run until the CSS had arrived - it
+   was finishing ~110ms after a stylesheet it has no dependency on. And the
+   requirement is that the SDK is loaded before any game code, so the earlier
+   it executes the less room there is for argument. charset still comes first,
+   because an encoding declaration behind a script is its own problem. */
+const charsetTag = '<meta charset="utf-8">';
+if (!html.includes(charsetTag)) fail('could not find the charset meta to anchor the SDK to');
+html = html.replace(charsetTag,
+  charsetTag + '\n<script src="https://www.youtube.com/game_api/v1"></script>');
 
 if (html.includes('STB_CONFIG')) fail('STB_CONFIG must not be inline in the page');
 if ((html.match(/<script/g) || []).length !== 2) {
@@ -243,9 +250,28 @@ fs.writeFileSync(path.join(DIST, 'styles.css'), css);
 
    The standalone build inlines both files, so it keeps the unstamped html. */
 const stamp = (buf) => crypto.createHash('sha256').update(buf).digest('hex').slice(0, 8);
+/* The bundle is attached by script rather than written as a <script src>.
+
+   This is the fix for "SDK loaded before any game code". Execution order was
+   never wrong - a parser-blocking script in the head always runs before a
+   deferred one - but the check is about LOADING, and the browser's preload
+   scanner fetches anything it can see in the markup immediately. Measured on
+   the built page: bundle.js finished downloading at 128ms while the SDK,
+   coming from youtube.com, did not finish until 852ms. The game code was
+   loaded 725ms before the SDK, exactly what the check names.
+
+   With no <script src> in the markup there is nothing for the scanner to
+   find, so the bundle is not requested until the line below runs - and that
+   line cannot run until the SDK script above it has loaded and executed,
+   because that one blocks the parser. The cost is real: the bundle can no
+   longer download in parallel with the SDK. Correctness wins here, and
+   gameReady still lands well inside the 5 second guidance. */
+const loader = `<script>document.head.appendChild(Object.assign(`
+  + `document.createElement('script'),{src:'bundle.js?v=${stamp(bundle)}',defer:true}));</script>`;
 const hashed = html
-  .replace('<script src="bundle.js" defer></script>',
-           `<script src="bundle.js?v=${stamp(bundle)}" defer></script>`)
+  .replace('<script src="bundle.js" defer></script>', '')
+  .replace('<script src="https://www.youtube.com/game_api/v1"></script>',
+           '<script src="https://www.youtube.com/game_api/v1"></script>\n' + loader)
   .replace('<link rel="stylesheet" href="styles.css">',
            `<link rel="stylesheet" href="styles.css?v=${stamp(css)}">`);
 if (hashed === html) fail('could not stamp the asset urls in index.html');
