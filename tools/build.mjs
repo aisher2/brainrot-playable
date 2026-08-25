@@ -335,12 +335,22 @@ if (SINGLE) {
 /* copy public/ verbatim: cover image, robots.txt, per-host config files */
 let copied = 0;
 if (fs.existsSync(PUBLIC)) {
-  for (const name of fs.readdirSync(PUBLIC)) {
-    const from = path.join(PUBLIC, name);
-    if (!fs.statSync(from).isFile()) continue;
-    fs.copyFileSync(from, path.join(DIST, name));
-    copied++;
-  }
+  /* Recursive now, so a directory in public/ ships as a directory. Added for
+     public/sample/, which carries Google's own plain-html-js-css Playable so
+     the Test Suite can be pointed at a known-good game on the same host and
+     tell us whether a failing check is ours or theirs. Delete that folder once
+     the question is settled - it has no business in a submission package. */
+  const copyDir = (src, dst) => {
+    fs.mkdirSync(dst, { recursive: true });
+    for (const name of fs.readdirSync(src)) {
+      const from = path.join(src, name);
+      const to = path.join(dst, name);
+      if (fs.statSync(from).isDirectory()) { copyDir(from, to); continue; }
+      fs.copyFileSync(from, to);
+      copied++;
+    }
+  };
+  copyDir(PUBLIC, DIST);
 }
 
 const files = fs.readdirSync(DIST)
