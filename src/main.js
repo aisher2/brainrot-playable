@@ -22,6 +22,7 @@ import { GameView } from './game/view.js';
 import { SoloSession, makeOpponent } from './game/solo.js';
 import { setArena, mapForSeed, currentMap } from './game/arena.js';
 import { levelById, starsEarned, goalText } from './data/levels.js';
+import { botName } from './game/bot.js';
 import { CFG, DT, EVENTS, ABILITIES } from './game/sim.js';
 import { CONFIG, yt, sdkReady } from './core/platform.js';
 import { submitScore } from './game/scores.js';
@@ -129,10 +130,12 @@ async function boot() {
 
   ui.hideBoot();
   app.mode = 'menu';
-  // A fresh player has no name, and the fallback "BRAINROT #0I71" tells an
-  // opponent nothing. Ask once, right after the loading screen.
-  if (!profile.name) ui.showNameEntry();
-  else ui.show('menu');
+  /* A fresh player gets a name rather than being asked for one. The fallback
+     used to be "BRAINROT #0I71", which is why the game stopped to ask; the
+     same generator the opponents use produces something with a bit of
+     character instead, and NAMEPLATE in CUSTOMIZE is there to change it. */
+  if (!profile.name) setName(botName((Math.random() * 0xffffffff) >>> 0));
+  ui.show('menu');
   if (profile.firstRun) { profile.firstRun = false; save(); }
   /* The label under PLAY carries reachability now. The button label itself
      follows what this build is *configured* for, so a temporary outage never
@@ -196,11 +199,6 @@ function wireUI() {
   ui.on('level', (id) => {
     const lv = levelById(id);
     if (lv) startMatch({ variant: lv.variant, level: lv });
-  });
-  ui.on('nameChosen', (n) => {
-    if (n) setName(n);
-    sfx.ui();
-    ui.show('menu');
   });
 
   ui.on('cancel', () => backToMenu());
@@ -312,7 +310,9 @@ async function startMatch(opts = {}) {
   const ui = app.ui;
   const variant = opts.variant || getSetting('variant') || 'classic';
   const seed = (opts.seed ?? ((Math.random() * 0xffffffff) >>> 0)) >>> 0;
-  const opp = makeOpponent(seed);
+  let opp = makeOpponent(seed);
+  // same generator as the player's own name, so a clash is possible
+  if (opp.name === displayName()) opp = makeOpponent((seed + 1) >>> 0);
   const info = { idx: 0, seed, opp, variant };
 
   /* There is nobody to wait for, but the opponent card is still worth its
