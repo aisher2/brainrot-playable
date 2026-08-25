@@ -78,6 +78,7 @@ function freshProfile() {
     achievements: {},        // id -> true when unlocked
     board: [],               // local high scores
     levels: {},              // level id -> stars earned (1-3)
+    seenHowTo: false,        // the signpost tutorial has been through once
     settings: {
       music: true, sfx: true, shake: true,
       quality: 'auto',       // auto | low | medium | high

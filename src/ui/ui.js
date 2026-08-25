@@ -79,7 +79,7 @@ const BOOT_TIPS = [
 
 const BOOT_FACES = ['🧠', '🍌', '👑', '🦵', '💨', '😵', '🤪', '🤯', '🥴'];
 
-const SCREENS = ['menu', 'search', 'hud', 'result', 'collect', 'custom', 'board', 'quests', 'settings', 'levels'];
+const SCREENS = ['menu', 'search', 'hud', 'result', 'collect', 'custom', 'board', 'quests', 'settings', 'levels', 'howto'];
 
 /** rAF, but with a timer fallback: background tabs stop firing rAF and
     thumbnails would then never appear. */
@@ -219,6 +219,9 @@ export class UI extends Emitter {
     click('btnSettings', () => this.show('settings', { push: true }));
     click('btnCancelSearch', () => this.emit('cancel'));
     click('btnLevels', () => this.show('levels', { push: true }));
+    click('btnHowTo', () => this.showHowTo());
+    click('btnSignNext', () => this._sign(1));
+    click('btnSignSkip', () => this._signDone());
     for (const b of document.querySelectorAll('#modePick button')) {
       b.addEventListener('click', () => {
         setSetting('variant', b.dataset.v);
@@ -641,6 +644,76 @@ export class UI extends Emitter {
 
       if (open) tile.addEventListener('click', () => { sfx.ui(); this.emit('level', lv.id); });
       host.appendChild(tile);
+    }
+  }
+
+  /* ---------------------------------------------------- how to play */
+  /* Six signs, in the order a new player needs them: what the thing in the
+     middle is, how to move, how to take it back, then the mode that inverts
+     the whole idea. Kept to one sentence each - anything longer and it stops
+     being a signpost and starts being a manual. */
+  _signs() {
+    const touch = this.input?.touchMode ?? matchMedia('(pointer:coarse)').matches;
+    return [
+      { i: '🧠', t: 'GRAB THE BRAINROT',
+        b: 'It starts in the middle of the arena. Get there first.' },
+      { i: '🕹', t: touch ? 'DRAG TO MOVE' : 'WASD TO MOVE',
+        b: touch ? 'The stick is bottom-left. Drag it any direction.'
+                 : 'Arrow keys work too. Drag the screen to look around.' },
+      { i: '🏆', t: 'HOLD IT TO SCORE',
+        b: 'Every second you carry the brainrot is a point. Keep it.' },
+      { i: '💨', t: touch ? 'TAP DASH TO CHARGE' : 'SPACE TO DASH',
+        b: 'Slam into the carrier to knock it loose and take it.' },
+      { i: '🦵', t: touch ? 'TAP AN ABILITY' : 'Q, E AND R',
+        b: 'Yeet kick, banana, magnet. They all buy you a few seconds.' },
+      { i: '💣', t: 'TAG BOMB IS THE OPPOSITE',
+        b: 'You do NOT want it. Touch your opponent to pass it on.' },
+    ];
+  }
+
+  showHowTo() {
+    this.signIdx = 0;
+    this.show('howto', { push: true });
+    this._renderSign();
+  }
+
+  _sign(step) {
+    const list = this._signs();
+    this.signIdx = (this.signIdx || 0) + step;
+    if (this.signIdx >= list.length) { this._signDone(); return; }
+    sfx.ui();
+    this._renderSign();
+  }
+
+  _signDone() {
+    sfx.ui();
+    this.emit('howToDone');
+    this.show('menu');
+  }
+
+  _renderSign() {
+    const list = this._signs();
+    const n = Math.max(0, Math.min(this.signIdx || 0, list.length - 1));
+    const s = list[n];
+    const set = (id, v) => { const e = $(id); if (e) e.textContent = v; };
+    set('signStep', (n + 1) + ' / ' + list.length);
+    set('signIco', s.i);
+    set('signTitle', s.t);
+    set('signBody', s.b);
+
+    const card = $('signCard');
+    if (card) { card.classList.remove('swing'); void card.offsetWidth; card.classList.add('swing'); }
+
+    const last = n === list.length - 1;
+    const next = $('btnSignNext');
+    if (next) next.querySelector('span').textContent = last ? "LET'S GO" : 'NEXT';
+    const skip = $('btnSignSkip');
+    if (skip) skip.hidden = last;
+
+    const dots = $('signDots');
+    if (dots) {
+      dots.textContent = '';
+      for (let k = 0; k < list.length; k++) dots.appendChild(el('i', k === n ? 'on' : ''));
     }
   }
 

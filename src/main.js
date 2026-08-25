@@ -135,7 +135,11 @@ async function boot() {
      same generator the opponents use produces something with a bit of
      character instead, and NAMEPLATE in CUSTOMIZE is there to change it. */
   if (!profile.name) setName(botName((Math.random() * 0xffffffff) >>> 0));
-  ui.show('menu');
+
+  /* A first-time player gets the signposts before the menu. It runs once and
+     is remembered; HOW TO PLAY reopens it whenever they want. */
+  if (!profile.seenHowTo) ui.showHowTo();
+  else ui.show('menu');
   if (profile.firstRun) { profile.firstRun = false; save(); }
   /* The label under PLAY carries reachability now. The button label itself
      follows what this build is *configured* for, so a temporary outage never
@@ -202,6 +206,7 @@ function wireUI() {
   });
 
   ui.on('cancel', () => backToMenu());
+  ui.on('howToDone', () => { profile.seenHowTo = true; save(); });
   ui.on('home', () => backToMenu());
   ui.on('again', () => startMatch({ variant: app.session?.variant || getSetting('variant') || 'classic' }));
   ui.on('loadout', () => { /* preview refreshes itself */ });
