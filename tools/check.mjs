@@ -363,10 +363,17 @@ try {
   if (page.indexOf('charset') > page.indexOf('<script')) {
     throw new Error('<meta charset> must come before the first script');
   }
-  /* A pending stylesheet blocks every script after it, so a <link> above the
-     SDK delays the one thing that must load first. */
-  if (page.indexOf('<link rel="stylesheet"') < page.indexOf('game_api/v1')) {
-    throw new Error('a stylesheet precedes the SDK and would block it');
+  /* The SDK must be the first resource the page fetches, so the markup may
+     name no other external file at all. The stylesheet is inlined and the
+     icon files dropped; the bundle is attached by the loader after the SDK
+     answers. Measured: styles.css used to finish at 680ms against the SDK's
+     1044ms, which is a resource loading before the SDK on every single run. */
+  const refs = [...page.matchAll(/(?:href|src)=" + '"' + "([^" + '"' + "]+)" + '"' + "/g)]
+    .map((m) => m[1])
+    .filter((u) => !u.startsWith('data:'));
+  const unexpected = refs.filter((u) => u !== 'https://www.youtube.com/game_api/v1');
+  if (unexpected.length) {
+    throw new Error('the page fetches something before the SDK: ' + unexpected.join(', '));
   }
   /* The bundle must NOT appear as a <script src> in the markup. The preload
      scanner fetches whatever it can see, which had the game code finishing

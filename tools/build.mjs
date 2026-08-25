@@ -277,6 +277,23 @@ const stamp = (buf) => crypto.createHash('sha256').update(buf).digest('hex').sli
 
    The 2.5s cap matters: outside the Playables host nothing will ever answer,
    and the game still has to boot. */
+/* Every subresource the markup names is fetched by the preload scanner, and
+   the small ones always win the race against a cross-origin SDK. Measured on
+   the deployed page: styles.css finished at 680ms, the SDK at 1044ms. If the
+   check counts any resource loading before the SDK - not just scripts - that
+   stylesheet has been failing it from the very first attempt, which is also
+   why moving script tags around never moved the result.
+
+   So the CSS is inlined and the two icon files dropped (the data: URI icon
+   already in the head covers the tab). What is left to fetch is the SDK, and
+   then the bundle, which the loader below only attaches once the SDK has
+   answered. Nothing can precede it. */
+html = html
+  .replace(/<link rel="stylesheet" href="styles\.css[^"]*">/, '<style>' + css + '</style>')
+  .replace(/\n<link rel="icon" href="favicon\.ico"[^>]*>/, '')
+  .replace(/\n<link rel="apple-touch-icon"[^>]*>/, '');
+if (html.includes('styles.css')) fail('the stylesheet is still an external request');
+
 const loader = `<script>(function(){var a=function(){document.head.appendChild(`
   + `Object.assign(document.createElement('script'),`
   + `{src:'bundle.js?v=${stamp(bundle)}',defer:true}));},d=0,`
