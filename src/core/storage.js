@@ -28,7 +28,15 @@ let memoryBlob = null;
 function detectBackend() {
   try {
     const yt = globalThis.ytgame;
-    if (yt && yt.game && typeof yt.game.loadData === 'function') return 'ytgame';
+    /* IN_PLAYABLES_ENV, not merely "loadData exists".
+       Outside the Playables host the SDK is deliberately a no-op: loadData
+       resolves to an empty string and saveData discards. Testing only for the
+       function meant a plain web deploy chose that backend and threw every
+       coin, level and star away on reload, silently, because nothing errors.
+       This is the guard the official sample applies to every SDK call. */
+    if (yt && yt.IN_PLAYABLES_ENV && yt.game && typeof yt.game.loadData === 'function') {
+      return 'ytgame';
+    }
   } catch (_) { /* ignore */ }
   try {
     const k = '__stb_probe';
@@ -101,7 +109,19 @@ export async function initStorage() {
   if (raw) {
     try {
       const p = JSON.parse(raw);
-      if (p && p.v === VERSION) profile = migrate(p);
+      /* Mutate in place; never reassign this binding.
+
+         The bundler rewrites `import { profile }` into a destructure, so every
+         other module holds the object that existed at import time. Assigning
+         `profile = migrate(p)` swapped the binding here and left everyone else
+         pointing at the original empty profile - the save was read correctly
+         and then loaded into an object nobody could see. Coins, XP, levels,
+         stars and the collection all reset on every load because of it. */
+      if (p && p.v === VERSION) {
+        const merged = migrate(p);
+        for (const k of Object.keys(profile)) delete profile[k];
+        Object.assign(profile, merged);
+      }
     } catch (_) { /* corrupt save -> fresh */ }
   }
   // Phones default to MEDIUM rather than AUTO so the first frame is already

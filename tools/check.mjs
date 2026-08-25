@@ -396,6 +396,44 @@ try {
   bad++;
 }
 
+/* ---- a saved profile must actually reach the rest of the game ----
+
+   The bundler rewrites imports into a destructure, so a module that reassigns
+   an exported binding leaves every importer holding the old value. storage.js
+   did exactly that when loading a save: it read the JSON correctly and then
+   assigned it to a fresh object nobody else referenced, so coins, XP, levels
+   and stars silently reset on every load. This pins the object identity. */
+try {
+  const modUrl = pathToFileURL(path.join(SRC, 'core/storage.js')).href + '?persist=1';
+  const store = {};
+  globalThis.localStorage = {
+    getItem: (k) => (k in store ? store[k] : null),
+    setItem: (k, v) => { store[k] = String(v); },
+    removeItem: (k) => { delete store[k]; },
+  };
+
+  const a = await import(modUrl);
+  await a.initStorage();
+  a.setName('PERSISTME');
+  a.addCoins(777);
+  await a.flush();
+
+  // a second import with a fresh module registry stands in for a reload
+  const b = await import(pathToFileURL(path.join(SRC, 'core/storage.js')).href + '?persist=2');
+  await b.initStorage();
+  if (b.profile.name !== 'PERSISTME') {
+    throw new Error(`name did not survive a reload: got "${b.profile.name}"`);
+  }
+  if (b.profile.coins < 777) {
+    throw new Error(`coins did not survive a reload: got ${b.profile.coins}`);
+  }
+  console.log('  save  profile survives a reload: name and coins both restored');
+  ok++;
+} catch (e) {
+  console.error('  FAIL  save persistence\\n        ' + e.message);
+  bad++;
+}
+
 /* ---- a sandboxed iframe can deny storage outright; the game must still run ---- */
 try {
   const denied = () => { throw new DOMException('The operation is insecure.', 'SecurityError'); };

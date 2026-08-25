@@ -51,7 +51,15 @@ export const CONFIG = {
    at an object nobody is listening to: our calls would appear to succeed
    while landing somewhere the host never sees. */
 function getSdk() {
-  try { return globalThis.ytgame || null; } catch (_) { return null; }
+  try {
+    const yt = globalThis.ytgame;
+    /* Outside the host the SDK is a no-op that warns on every call. Google's
+       own sample gates all of its SDK usage on IN_PLAYABLES_ENV rather than on
+       the object existing, so this does the same: in the host it is the real
+       SDK, anywhere else it is null and every adapter method below turns into
+       the harmless fallback it already had. */
+    return (yt && yt.IN_PLAYABLES_ENV) ? yt : null;
+  } catch (_) { return null; }
 }
 
 let firstFrameSent = false;

@@ -6,6 +6,7 @@
   "type": "commonjs",
   "scripts": {
     "start": "node server/server.js --root dist",
+    "start:csp": "node server/server.js --root dist --csp",
     "build": "node tools/build.mjs",
     "build:single": "node tools/build.mjs --single",
     "build:playables": "node tools/build.mjs",

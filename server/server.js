@@ -49,6 +49,34 @@ const TEXTUAL = new Set(['.html', '.js', '.css', '.json', '.svg', '.webmanifest'
    headers matter more than any caching cleverness: index.html must always be
    revalidated, and the two assets it names are content-stamped by the build,
    which is what makes a long max-age safe on them. */
+/* The exact Content-Security-Policy YouTube serves Playables under, copied
+   from the Playables SDK Test Suite guide. Their advice is to override the
+   header locally so violations surface during development rather than during
+   certification, so `--csp` does that here:
+
+     node server/server.js --root dist --csp
+
+   Note what it permits: 'unsafe-inline' for both script-src and style-src, so
+   an inlined stylesheet is fine, and connect-src is limited to 'self', which
+   an offline build satisfies by having nothing to connect to. */
+const YT_CSP = [
+  "default-src 'none'",
+  "script-src 'report-sample' 'self' 'unsafe-eval' 'unsafe-inline' blob:"
+    + ' https://www.youtube.com/game_api/v0 https://www.youtube.com/game_api/v0/'
+    + ' https://www.youtube.com/game_api/v1 https://www.youtube.com/game_api/v1/',
+  "object-src 'none'",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "img-src 'self' blob: data:",
+  "media-src 'self' blob:",
+  "font-src 'self' data: https://fonts.googleapis.com https://fonts.gstatic.com",
+  "connect-src 'self' blob: data:",
+  'sandbox allow-pointer-lock allow-same-origin allow-scripts',
+  "base-uri 'self'",
+  "manifest-src 'self'",
+  "worker-src 'self' blob:",
+].join('; ');
+const USE_CSP = argv.includes('--csp');
+
 function headersFor(ext, isIndex) {
   const h = { 'content-type': TYPES[ext] || 'application/octet-stream' };
   h['cache-control'] = isIndex
@@ -56,6 +84,7 @@ function headersFor(ext, isIndex) {
     : 'public, max-age=3600';
   h['x-content-type-options'] = 'nosniff';
   h['referrer-policy'] = 'no-referrer';
+  if (USE_CSP && isIndex) h['content-security-policy'] = YT_CSP;
   return h;
 }
 
