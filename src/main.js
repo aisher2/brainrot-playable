@@ -707,8 +707,20 @@ function governQuality(dt) {
 }
 
 /* ============================================================ */
-addEventListener('error', (e) => console.error('[uncaught]', e.error || e.message));
-addEventListener('unhandledrejection', (e) => console.error('[unhandled]', e.reason));
+/* Report crashes to the host, not just to a console nobody is reading.
+
+   logError was only wired to fatal boot failures, so anything that broke
+   mid-match - the case most likely to affect real players - left no signal at
+   all outside the player's own devtools. The SDK documents this API as
+   best-effort and rate-limited, so a repeating error will not flood it. */
+addEventListener('error', (e) => {
+  console.error('[uncaught]', e.error || e.message);
+  yt.logError(e.error || e.message);
+});
+addEventListener('unhandledrejection', (e) => {
+  console.error('[unhandled]', e.reason);
+  yt.logError(e.reason);
+});
 
 /* Certification requires the SDK to be loaded before any game code, and the
    guidance is to hold game instantiation until both the document and the SDK
