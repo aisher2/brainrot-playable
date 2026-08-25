@@ -276,12 +276,35 @@ html = html
   .replace(/\n<link rel="apple-touch-icon"[^>]*>/, '');
 if (html.includes('styles.css')) fail('the stylesheet is still an external request');
 
-/* Keep the SDK and game bundle as the reference sample does: two ordinary,
-   parser-blocking scripts in order. The Test Suite treats an inline loader as
-   game code, and a deferred bundle can be fetched before the SDK completes.
-   This costs some parallel download time but makes the execution contract
-   unambiguous: game code cannot be parsed or executed until the SDK is done. */
-const loader = `<script src="bundle.js?v=${stamp(bundle)}"></script>`;
+/* The bundle is attached only once the SDK has answered a call.
+
+   This is not a guess about ordering any more. The SDK's own source shows how
+   the Test Suite learns about resources:
+
+     .observe({type: "resource", buffered: true})
+
+   installed on a PerformanceObserver that forwards every resource entry to the
+   host, skipping only youtube.com/game_api URLs. `buffered: true` is the part
+   that matters: when that observer starts it is handed everything already in
+   the performance buffer. The events carry name and byte sizes but no
+   timestamps, so the host cannot compare load times - what it can see is
+   whether that first replayed batch was empty. Anything already downloaded by
+   the time the SDK stood up arrives in it, and that is "game code loaded
+   before the SDK".
+
+   A plain <script src> in the markup loses this by default: the preload
+   scanner fetches it the moment it is parsed, so a small same-origin bundle
+   routinely finishes before a 65 KiB cross-origin SDK, no matter which tag
+   comes first in the document. Reordering tags cannot fix it. Nothing else is
+   left to race - the stylesheet is inlined above and the icon files dropped -
+   so the bundle is the only entry that can land in that batch.
+
+   Waiting on system.getLanguage() is the signal, not a timer: it is a real
+   round trip that cannot resolve until the SDK is up and talking to the host,
+   which is necessarily after its observer exists. The timeout is only a
+   fallback so an ordinary web deploy, where nothing will ever answer, still
+   boots. */
+const loader = `<script>(function(){var done=0,attach=function(){if(done)return;done=1;var s=document.createElement('script');s.src='bundle.js?v=${stamp(bundle)}';document.head.appendChild(s);};setTimeout(attach,2000);try{var y=window.ytgame;if(y&&y.system&&y.system.getLanguage){Promise.resolve(y.system.getLanguage()).then(attach,attach);}else{attach();}}catch(e){attach();}}());</script>`;
 
 const hashed = html
   .replace('<script src="bundle.js" defer></script>', '')

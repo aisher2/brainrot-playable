@@ -348,10 +348,9 @@ try {
     throw new Error('the Playables SDK script tag is missing');
   }
 
-  /* Certification requires the SDK to execute before any game code. The page
-     therefore carries exactly two scripts - the SDK, then the bundle - with
-     nothing inline between them. The config used to be an inline script here,
-     which is game code by any reading; it now rides inside the bundle. */
+  /* Certification requires the SDK to load before game code. Match the
+     official reference shape: a synchronous SDK tag followed immediately by
+     a synchronous game-bundle tag. */
   const scripts = [...page.matchAll(/<script[^>]*>/g)].map((m) => m[0]);
   if (scripts.length !== 2) {
     throw new Error(`expected exactly 2 script tags, found ${scripts.length}`);
@@ -375,20 +374,16 @@ try {
   if (unexpected.length) {
     throw new Error('the page fetches something before the SDK: ' + unexpected.join(', '));
   }
-  /* Structure taken from google/web-game-samples plain-html-js-css, which is
-     the reference implementation: the SDK, then the game script, both plain
-     synchronous tags in the head. Earlier revisions here asserted the bundle
-     must NOT be a static script tag - that was wrong, the sample proves an
-     ordinary tag is fine, so the assertion is now the sample's own shape. */
-  if (!scripts[1].includes("bundle.js")) {
-    throw new Error("the second script is not the game bundle");
+  /* The bundle must NOT be a <script src> in the markup. The preload scanner
+     fetches whatever it can see, and the SDK reports the performance buffer
+     to the host with buffered:true - so anything already downloaded when it
+     starts counts as having loaded before it. The second script is the
+     loader that attaches the bundle once the SDK has answered a call. */
+  if (/<script[^>]*\ssrc=["'][^"']*bundle\.js/.test(page)) {
+    throw new Error('bundle.js is a static script tag; the scanner fetches it before the SDK');
   }
-  /* deferred on purpose - see the note in build.mjs. Synchronous, as the
-     sample has it, cost 2.8s of load time on a bundle seven times the
-     size. async is the one that would genuinely be wrong: it can run
-     before the SDK. */
-  if (/\sasync/.test(scripts[1])) {
-    throw new Error("async would let the game script run before the SDK");
+  if (!page.includes('getLanguage') || !page.includes('bundle.js?v=')) {
+    throw new Error('the SDK-gated bundle loader is missing');
   }
   if (page.includes('STB_CONFIG')) {
     throw new Error('STB_CONFIG is inline in the page; it belongs in the bundle');
@@ -435,6 +430,42 @@ try {
   ok++;
 } catch (e) {
   console.error('  FAIL  save persistence\\n        ' + e.message);
+  bad++;
+}
+
+/* ---- Playables cloud save: load completes before save, with no browser
+   fallback when the SDK reports an error ---- */
+try {
+  const cloudWrites = [];
+  globalThis.ytgame = {
+    IN_PLAYABLES_ENV: true,
+    game: {
+      loadData: async () => '',
+      saveData: async (data) => { cloudWrites.push(data); },
+    },
+  };
+  const cloud = await import(pathToFileURL(path.join(SRC, 'core/storage.js')).href + '?cloud=1');
+  const { backend } = await cloud.initStorage();
+  if (backend !== 'ytgame') throw new Error(`expected ytg backend, got ${backend}`);
+  cloud.setName('CLOUDONLY');
+  await cloud.flush();
+  if (cloudWrites.length !== 1) throw new Error(`expected one cloud write, got ${cloudWrites.length}`);
+  if (cloudWrites[0].length * 2 >= 3 * 1024 * 1024) throw new Error('cloud save exceeds 3 MiB');
+
+  let rejectedWrites = 0;
+  globalThis.ytgame.game.loadData = async () => { throw new Error('offline'); };
+  globalThis.ytgame.game.saveData = async () => { rejectedWrites++; };
+  const rejected = await import(pathToFileURL(path.join(SRC, 'core/storage.js')).href + '?cloud-rejected=1');
+  await rejected.initStorage();
+  rejected.addCoins(1);
+  await rejected.flush();
+  if (rejectedWrites) throw new Error('saved after a failed cloud load');
+  delete globalThis.ytgame;
+  console.log('  cloud load precedes save; cloud data is UTF-16 and below 3 MiB');
+  ok++;
+} catch (e) {
+  delete globalThis.ytgame;
+  console.error('  FAIL  Playables cloud save\\n        ' + e.message);
   bad++;
 }
 

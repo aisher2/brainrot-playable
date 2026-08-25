@@ -59,11 +59,13 @@ async function boot() {
   const ui = new UI(null);
   app.ui = ui;
   ui.startBootGags();
+  // The loading UI is visible now. Tell the host before any async boot work
+  // (especially a cloud-save load) can hold the Playables loading spinner.
+  yt.firstFrameReady();
 
   ui.setLoading(0.05, 'waking up the brainrots');
   const { backend } = await initStorage();
   ui.setLoading(0.2, 'reading your brainrot diary');
-  yt.firstFrameReady();          // loading screen is on screen
 
   // pick a geometry detail level once, from what the device tells us
   const detail = pickDetail();
@@ -187,6 +189,10 @@ const frame = () => new Promise((r) => {
 
 function fatal(msg, err) {
   console.error(msg, err);
+  // Health logging is best-effort, but gives the Playables host enough
+  // context to diagnose a boot failure that would otherwise only be visible
+  // in the embedded frame's console.
+  yt.logError(err || msg);
   const b = document.getElementById('boot');
   if (b) b.innerHTML = `<div style="text-align:center;padding:24px"><div style="font-size:52px">💀</div>
     <h2 style="font-size:18px">${msg}</h2></div>`;
@@ -266,12 +272,15 @@ function wireUI() {
       else startMenuMusic();
     }
   };
-  addEventListener('visibilitychange', () => setPaused(document.hidden));
-  addEventListener('pagehide', () => setPaused(true));
-
-  // YouTube can suspend the game; obey it and never keep simulating in the dark
-  yt.onPause(() => setPaused(true));
-  yt.onResume(() => setPaused(document.hidden));
+  // YouTube owns lifecycle notifications in Playables. Page Visibility is not
+  // used there because it can disagree with the host's suspended state.
+  yt.onPause(() => {
+    // onPause can be followed by eviction, so start the cloud-save flush
+    // inside the SDK's short save window after stopping the game loop.
+    setPaused(true);
+    void save(true);
+  });
+  yt.onResume(() => setPaused(false));
 
   /* ...and it owns the mute switch while we are embedded.
 
@@ -441,13 +450,15 @@ async function onRoundEnded(data) {
   const unlocked = refreshUnlocks();
   const afterLevel = levelInfo().level;
 
-  submitScore(me.score, { won: won ? 1 : 0, hold: Math.round(me.holdTime * 10) / 10 });
+  await submitScore(me.score, { won: won ? 1 : 0, hold: Math.round(me.holdTime * 10) / 10 });
+  // Persist the board entry before reporting it: YouTube requires the score
+  // it displays to agree with the game's saved best score.
+  await flush();
 
-  /* Report the round to the host. Each mode is measured by its own number -
-     CLASSIC has no tags and TAG BOMB awards no score - so send whichever one
-     the player was actually playing for, which is also the number the HUD
-     showed them all round. */
-  yt.sendScore(app.session?.variant === 'tagbomb' ? (me.tags || 0) : me.score);
+  /* The SDK leaderboard supports one score dimension. CLASSIC points are the
+     persistent board's score; TAG BOMB is a separate survival mode, so it
+     deliberately does not submit its tag count as a competing dimension. */
+  if (app.session?.variant !== 'tagbomb') yt.sendScore(me.score);
 
   /* --- level ladder --- */
   let levelResult = null;

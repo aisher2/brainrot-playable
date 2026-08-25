@@ -18,12 +18,16 @@ import { Emitter } from './util.js';
 
 const KEY = 'stealthebrainrot.v1';
 const VERSION = 1;
+// The SDK limit is 3 MiB of UTF-16 data. Keep the exact limit here rather
+// than relying on a rejected promise after the player has made progress.
+const MAX_CLOUD_SAVE_BYTES = 3 * 1024 * 1024;
 
 export const store = new Emitter();
 
 /* ---------- backend detection ---------- */
 let backend = 'memory';
 let memoryBlob = null;
+let cloudLoadSucceeded = false;
 
 function detectBackend() {
   try {
@@ -49,7 +53,14 @@ function detectBackend() {
 
 async function backendLoad() {
   if (backend === 'ytgame') {
-    try { return await globalThis.ytgame.game.loadData(); } catch (_) { return null; }
+    try {
+      const data = await globalThis.ytgame.game.loadData();
+      // Even an empty string is a successful load. This acknowledgement is
+      // required before the SDK permits a save, protecting an existing cloud
+      // profile from being overwritten while a load is still in flight.
+      cloudLoadSucceeded = true;
+      return data;
+    } catch (_) { return null; }
   }
   if (backend === 'local') {
     try { return localStorage.getItem(KEY); } catch (_) { return null; }
@@ -59,7 +70,12 @@ async function backendLoad() {
 
 async function backendSave(str) {
   if (backend === 'ytgame') {
-    try { await globalThis.ytgame.game.saveData(str); return; } catch (_) { /* fall through */ }
+    // Do not fall back to browser storage in Playables: cloud save is the
+    // single source of progress there. A failed load/save must never create a
+    // device-only fork that a player cannot recover on another device.
+    if (!cloudLoadSucceeded) return;
+    await globalThis.ytgame.game.saveData(str);
+    return;
   }
   if (backend === 'local') {
     try { localStorage.setItem(KEY, str); return; } catch (_) { /* fall through */ }
@@ -160,12 +176,16 @@ export async function flush() {
   clearTimeout(saveTimer); saveTimer = 0;
   if (!dirty) return;
   dirty = false;
-  try { await backendSave(JSON.stringify(profile)); } catch (e) { console.warn('[save]', e); }
-}
-
-if (typeof addEventListener === 'function') {
-  addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
-  addEventListener('pagehide', flush);
+  try {
+    let data = JSON.stringify(profile);
+    // saveData requires well-formed UTF-16. Text entered through normal UI is
+    // fine, but old/corrupt saves can contain lone surrogates.
+    if (typeof data.toWellFormed === 'function') data = data.toWellFormed();
+    if (data.length * 2 > MAX_CLOUD_SAVE_BYTES) {
+      throw new RangeError('cloud save exceeds the 3 MiB SDK limit');
+    }
+    await backendSave(data);
+  } catch (e) { console.warn('[save]', e); }
 }
 
 /* ---------- day rollover: challenges + daily reward ---------- */

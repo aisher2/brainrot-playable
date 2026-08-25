@@ -62,6 +62,15 @@ function getSdk() {
   } catch (_) { return null; }
 }
 
+/* The SDK deliberately exposes its namespace when served locally, but marks
+   IN_PLAYABLES_ENV false and makes every API a no-op. That is still proof the
+   script has loaded. Keep that separate from getSdk(): callers that talk to
+   the host need the latter, while boot only needs to know that its preceding
+   SDK script has executed. */
+function sdkNamespaceLoaded() {
+  try { return !!globalThis.ytgame; } catch (_) { return false; }
+}
+
 let firstFrameSent = false;
 let readySent = false;
 
@@ -126,25 +135,25 @@ export const yt = {
   logError(err) {
     const sdk = getSdk();
     if (!sdk) return;
-    safe(() => sdk.game?.logError?.(String(err && err.message || err)), 'logError');
+    safe(() => sdk.health?.logError?.(String(err && err.message || err)), 'logError');
   },
 };
 
 /**
- * Resolve once the SDK object is present.
+ * Resolve once the SDK namespace is present.
  *
  * The script is synchronous and sits above our bundle, so in the host this is
- * already true on the first check. It matters for the harness, which can
- * replace the SDK while the page is still coming up, and it costs a plain web
- * deploy nothing: with no SDK at all the wait gives up quickly and the game
- * boots exactly as before.
+ * already true on the first check. Do not wait for IN_PLAYABLES_ENV here: the
+ * documented local SDK is intentionally a no-op with that flag set to false.
+ * Waiting for the flag held ordinary web builds on their loading screen for
+ * the full timeout even though the SDK had loaded correctly.
  */
 export function sdkReady(timeoutMs = 3000) {
-  if (getSdk()) return Promise.resolve(true);
+  if (sdkNamespaceLoaded()) return Promise.resolve(true);
   return new Promise((resolve) => {
     const t0 = Date.now();
     const tick = () => {
-      if (getSdk()) return resolve(true);
+      if (sdkNamespaceLoaded()) return resolve(true);
       if (Date.now() - t0 >= timeoutMs) return resolve(false);
       setTimeout(tick, 30);
     };
