@@ -531,5 +531,34 @@ try {
   bad++;
 }
 
+/* ---- every button in the markup must actually be wired ----
+
+   PLAY AGAIN and MAIN MENU shipped dead: their handlers were removed as
+   collateral when the name-entry code was cut, and nothing caught it because
+   the buttons still rendered. A player finishing a match had no way off the
+   results screen. This walks the ids in index.html and fails if one has no
+   handler in the UI layer. */
+try {
+  const page = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+  /* Two places legitimately bind buttons: ui.js for menu and screen controls,
+     input.js for the in-match pad, where TAUNT and the ability buttons live. */
+  /* Three places legitimately reference buttons: ui.js for menu and screen
+     controls, main.js where the in-match pad elements are looked up, and
+     input.js which binds them. */
+  const wiring = ['ui/ui.js', 'core/input.js', 'main.js']
+    .map((f) => fs.readFileSync(path.join(SRC, f), 'utf8')).join('');
+  const ids = [...page.matchAll(/<button[^>]*\sid="([^"]+)"/g)].map((m) => m[1]);
+  if (ids.length < 8) throw new Error('found suspiciously few buttons: ' + ids.length);
+  const dead = ids.filter((id) => !wiring.includes(`'${id}'`) && !wiring.includes(`"${id}"`));
+  if (dead.length) {
+    throw new Error('buttons with no handler: ' + dead.join(', '));
+  }
+  console.log(`  ui    all ${ids.length} buttons in the markup are wired`);
+  ok++;
+} catch (e) {
+  console.error('  FAIL  dead buttons\n        ' + e.message);
+  bad++;
+}
+
 console.log(`\n${bad ? '❌' : '✅'} ${ok} passed, ${bad} failed`);
 process.exit(bad ? 1 : 0);

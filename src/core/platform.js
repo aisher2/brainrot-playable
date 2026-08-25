@@ -133,6 +133,81 @@ export const yt = {
 
   /** Surface a fatal error to the host so it can report it. */
   /**
+   * The player's YouTube locale, as a BCP-47 tag.
+   *
+   * The reference is explicit that this is the only acceptable source: not
+   * navigator.language, and never persisted into the cloud save, because it
+   * can change between sessions. Resolves to null outside the host so callers
+   * can fall back without special-casing.
+   */
+  getLanguage() {
+    const sdk = getSdk();
+    if (!sdk) return Promise.resolve(null);
+    try {
+      const p = sdk.system?.getLanguage?.();
+      return p ? Promise.resolve(p).catch(() => null) : Promise.resolve(null);
+    } catch (_) { return Promise.resolve(null); }
+  },
+
+  /** Recoverable trouble - the counterpart to logError. Also argument-less. */
+  logWarning(what) {
+    if (what) { try { console.warn('[game]', what); } catch (_) { /* ignore */ } }
+    const sdk = getSdk();
+    if (!sdk) return;
+    safe(() => sdk.health?.logWarning?.(), 'logWarning');
+  },
+
+  /**
+   * Open a video or another Playable through YouTube.
+   *
+   * This is the only sanctioned way to send a player somewhere else: a plain
+   * link is a certification failure, and this hands the navigation to the host
+   * instead of performing it ourselves.
+   */
+  openYTContent(id, kind) {
+    const sdk = getSdk();
+    if (!sdk || !id) return Promise.resolve(false);
+    const type = kind === 'playable'
+      ? sdk.engagement?.ContentType?.PLAYABLE
+      : sdk.engagement?.ContentType?.VIDEO;
+    try {
+      const p = sdk.engagement?.openYTContent?.({ id, contentType: type });
+      return p ? Promise.resolve(p).then(() => true, () => false) : Promise.resolve(false);
+    } catch (_) { return Promise.resolve(false); }
+  },
+
+  /**
+   * An ad at a natural break in play.
+   *
+   * Resolving tells you the request succeeded, not that anything was shown -
+   * the reference is explicit about that, which is why this must never be used
+   * to hand out a reward. Always resolves so a caller can carry on regardless.
+   */
+  requestInterstitialAd() {
+    const sdk = getSdk();
+    if (!sdk) return Promise.resolve(false);
+    try {
+      const p = sdk.ads?.requestInterstitialAd?.();
+      return p ? Promise.resolve(p).then(() => true, () => false) : Promise.resolve(false);
+    } catch (_) { return Promise.resolve(false); }
+  },
+
+  /**
+   * An ad the player opted into, in exchange for something.
+   *
+   * Resolves true only when the player actually earned it. rewardId must be a
+   * stable, hard-coded string carrying no player data.
+   */
+  requestRewardedAd(rewardId) {
+    const sdk = getSdk();
+    if (!sdk || !rewardId) return Promise.resolve(false);
+    try {
+      const p = sdk.ads?.requestRewardedAd?.(rewardId);
+      return p ? Promise.resolve(p).then((ok) => ok === true, () => false) : Promise.resolve(false);
+    } catch (_) { return Promise.resolve(false); }
+  },
+
+  /**
    * Tell the host something went wrong.
    *
    * The signature really is logError(): void - it takes no arguments. We were

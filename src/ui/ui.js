@@ -17,7 +17,7 @@ import { SLOTS, findItem, unlockText } from '../data/cosmetics.js';
 import { msUntilMidnight, xpForLevel, MAX_LEVEL } from '../data/progression.js';
 import { LEVELS, LEVEL_COUNT, goalText } from '../data/levels.js';
 import { fetchBoard } from '../game/scores.js';
-import { CONFIG } from '../core/platform.js';
+import { CONFIG, yt } from '../core/platform.js';
 import { sfx } from '../core/audio.js';
 
 const $ = (id) => document.getElementById(id);
@@ -222,6 +222,14 @@ export class UI extends Emitter {
     click('btnHowTo', () => this.showHowTo());
     click('btnSignNext', () => this._sign(1));
     click('btnSignSkip', () => this._signDone());
+
+    /* The results screen's two ways out. These were lost when the name-entry
+       handlers were removed - they sat between the same two anchors - which
+       left the player stuck on the results screen after every match with no
+       way back to the menu or into another round. */
+    click('btnAgain', () => this.emit('again'));
+    click('btnHome', () => this.emit('home'));
+    click('btnRewardAd', () => this.emit('rewardAd'));
     for (const b of document.querySelectorAll('#modePick button')) {
       b.addEventListener('click', () => {
         setSetting('variant', b.dataset.v);
@@ -544,6 +552,17 @@ export class UI extends Emitter {
    * A level round is judged on its own goal, not just on who won: you can
    * take the round and still miss a SCORE target, so say which it was.
    */
+  /** Show or withdraw the rewarded-ad offer. 0 hides it. */
+  setRewardOffer(coins) {
+    const b = $('btnRewardAd');
+    if (!b) return;
+    b.hidden = !coins;
+    if (coins) {
+      const s = b.querySelector('small');
+      if (s) s.textContent = `watch a short ad for +${coins}`;
+    }
+  }
+
   _levelOutcome(lv) {
     const host = $('resultLevel');
     if (!host) return;
@@ -565,6 +584,8 @@ export class UI extends Emitter {
     this.show('result');
     const { result, myStats, theirStats, rewards, unlocked, challenges, achievements, newBrainrot, levelUp } = data;
     this._levelOutcome(data.level);
+    // only offer the ad when there is something to double and a host to ask
+    this.setRewardOffer(yt.available ? (data.rewards?.coins || 0) : 0);
 
     const crown = $('resultCrown');
     const title = $('resultTitle');

@@ -757,6 +757,22 @@ canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;background
   .signwrap{gap:10px}
 }
 
+
+/* ---------- rewarded ad offer ---------- */
+/* Opt-in only, and it never blocks PLAY AGAIN: the reference is explicit that
+   a rewarded ad is something the player asks for. It hides itself the moment
+   it is used or unavailable, so it can never sit there as a dead control. */
+.btn.reward{
+  min-height:46px;gap:9px;margin-bottom:8px;
+  background:linear-gradient(180deg,#ffd257,#f2a713);
+  box-shadow:0 5px 0 #a86a00,0 10px 22px rgba(0,0,0,.32);
+  color:#3a2300;text-shadow:none;
+}
+.btn.reward i{font-size:18px}
+.btn.reward small{
+  display:block;width:100%;font-size:9px;letter-spacing:.14em;opacity:.75;margin-top:1px;
+}
+
 @media (prefers-reduced-motion:reduce){
   *{animation-duration:.01ms !important;animation-iteration-count:1 !important}
 }

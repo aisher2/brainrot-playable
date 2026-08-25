@@ -185,7 +185,14 @@ export async function flush() {
       throw new RangeError('cloud save exceeds the 3 MiB SDK limit');
     }
     await backendSave(data);
-  } catch (e) { console.warn('[save]', e); }
+  } catch (e) {
+    /* A failed save is recoverable - the player keeps playing - but it is
+       exactly the kind of thing worth reporting. Emitted rather than reported
+       from here so core/ does not have to reach into the platform layer;
+       main.js forwards it to health.logWarning. */
+    console.warn('[save]', e);
+    store.emit('saveFailed', e);
+  }
 }
 
 /* ---------- day rollover: challenges + daily reward ---------- */

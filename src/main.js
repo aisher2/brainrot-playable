@@ -214,6 +214,23 @@ function wireUI() {
   ui.on('cancel', () => backToMenu());
   ui.on('howToDone', () => { profile.seenHowTo = true; save(); });
   ui.on('home', () => backToMenu());
+  /* Opt-in only, and the offer is withdrawn the moment it is taken or the
+     host declines - a rewarded ad the player did not ask for is a
+     certification problem, and a button that silently does nothing is worse
+     than no button. The reward id is hard-coded and carries no player data,
+     which the reference requires. */
+  ui.on('rewardAd', async () => {
+    const coins = app.lastRewardCoins || 0;
+    if (!coins) { ui.setRewardOffer(0); return; }
+    ui.setRewardOffer(0);
+    const earned = await yt.requestRewardedAd('double-coins-v1');
+    if (earned) {
+      addCoins(coins);
+      ui.toastInfo(`+${coins} bonus coins`);
+      sfx.unlock();
+    }
+  });
+
   ui.on('again', () => startMatch({ variant: app.session?.variant || getSetting('variant') || 'classic' }));
   ui.on('loadout', () => { /* preview refreshes itself */ });
 
@@ -274,6 +291,9 @@ function wireUI() {
   };
   // YouTube owns lifecycle notifications in Playables. Page Visibility is not
   // used there because it can disagree with the host's suspended state.
+  // a save that did not land is recoverable, but the host should hear about it
+  store.on('saveFailed', () => yt.logWarning('cloud save failed'));
+
   yt.onPause(() => {
     // onPause can be followed by eviction, so start the cloud-save flush
     // inside the SDK's short save window after stopping the game loop.
@@ -481,6 +501,17 @@ async function onRoundEnded(data) {
   await wait(900);
   // the menu theme returns under the results screen
   if (getSetting('music') && app.hostAudioOk !== false) startMenuMusic();
+  /* An interstitial at the results screen - a natural breakpoint, which is
+     where the reference says to put one. Not every round: three matches
+     apart is frequent enough to be worth something and rare enough not to be
+     the thing people remember about the game. The request is fire-and-forget
+     because resolving only means it was accepted, never that anything ran. */
+  // what a rewarded ad would double, if the player chooses to watch one
+  app.lastRewardCoins = rewards?.coins || 0;
+
+  app.roundsSinceAd = (app.roundsSinceAd || 0) + 1;
+  if (app.roundsSinceAd >= 3) { app.roundsSinceAd = 0; yt.requestInterstitialAd(); }
+
   ui.showResult({
     result: draw ? 'draw' : won ? 'win' : 'lose',
     winnerIdx: data.winner,
