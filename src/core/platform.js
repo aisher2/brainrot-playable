@@ -132,10 +132,20 @@ export const yt = {
   },
 
   /** Surface a fatal error to the host so it can report it. */
+  /**
+   * Tell the host something went wrong.
+   *
+   * The signature really is logError(): void - it takes no arguments. We were
+   * passing the message in, which JS accepts silently but is not the contract,
+   * and it would have been shipping error text to YouTube that the API never
+   * asked for. The detail goes to the console instead, where it is useful to
+   * whoever is actually debugging.
+   */
   logError(err) {
+    if (err) { try { console.error('[game]', err); } catch (_) { /* ignore */ } }
     const sdk = getSdk();
     if (!sdk) return;
-    safe(() => sdk.health?.logError?.(String(err && err.message || err)), 'logError');
+    safe(() => sdk.health?.logError?.(), 'logError');
   },
 };
 
