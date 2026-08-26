@@ -201,33 +201,30 @@ fs.writeFileSync(path.join(DIST, 'bundle.js'), bundle);
 let html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 html = html.replace('<script type="module" src="src/main.js"></script>', '<script src="bundle.js" defer></script>');
 if (html.includes('src/main.js')) fail('could not rewrite the script tag in index.html');
-// bake in whichever relay the deploy wants
-/* The config used to ship as an inline <script> in the head. Certification
-   requires the SDK to load before any game code, and an inline script that
-   sets the game's own config global is game code by any reading - even sitting
-   below the SDK tag it left the question open. It is prepended to the bundle
-   instead, so the document contains exactly two scripts: the SDK, then the
-   game. Nothing executes between them. */
-const cfgRe = /<script>window\.STB_CONFIG[\s\S]*?<\/script>\n?/;
-if (!cfgRe.test(html)) fail('could not find the STB_CONFIG block in index.html');
-html = html.replace(cfgRe, '');
+/* The config is prepended to the bundle above rather than written into the
+   page. An inline script that sets the game's own config global is game code
+   by any reading, and certification wants nothing of the sort ahead of the
+   SDK. The source carries none, so there is nothing to strip here - only an
+   assertion that it stays that way. */
+if (/<script>[^<]*STB_CONFIG/.test(html)) {
+  fail('index.html has an inline STB_CONFIG script; it belongs in the bundle');
+}
 
 html = html.replace(/\n\s*<!--[\s\S]*?-->/g, '');           // strip layout comments
 
-/* The SDK goes immediately after <meta charset>, ahead of everything else in
-   the head.
+/* The SDK tag lives in the source index.html, not here.
 
-   Two reasons it is not simply last-in-head like the reference template. A
-   pending stylesheet blocks execution of any script that follows it, so with
-   the <link> above it the SDK could not run until the CSS had arrived - it
-   was finishing ~110ms after a stylesheet it has no dependency on. And the
-   requirement is that the SDK is loaded before any game code, so the earlier
-   it executes the less room there is for argument. charset still comes first,
-   because an encoding declaration behind a script is its own problem. */
-const charsetTag = '<meta charset="utf-8">';
-if (!html.includes(charsetTag)) fail('could not find the charset meta to anchor the SDK to');
-html = html.replace(charsetTag,
-  charsetTag + '\n<script src="https://www.youtube.com/game_api/v1"></script>');
+   It used to be injected at build time, which meant the source entry point
+   had no SDK at all: anyone serving the repo directly for development ran
+   the game with the integration absent, and the ordering the requirement
+   cares about was only ever exercised in a built artifact. The source owns
+   it now and the build only checks it, so dev and production load the same
+   way. */
+const sdkTag = '<script src="https://www.youtube.com/game_api/v1"></script>';
+if (!html.includes(sdkTag)) fail('index.html is missing the Playables SDK script tag');
+if (html.indexOf(sdkTag) !== html.indexOf('<script')) {
+  fail('the Playables SDK must be the first script in index.html');
+}
 
 if (html.includes('STB_CONFIG')) fail('STB_CONFIG must not be inline in the page');
 if ((html.match(/<script/g) || []).length !== 2) {

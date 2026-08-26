@@ -2,6 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<!-- The Playables SDK MUST load before any game code. It is the first
+     script in the document and the only external file this page names. -->
+<script src="https://www.youtube.com/game_api/v1"></script>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>Steal the Brainrot</title>
 <meta name="description" content="Grab the Brainrot, hold it, get bonked, steal it back. A 60-second 1v1 arena brawl you can play in your browser.">
@@ -47,7 +50,6 @@
                   ''      local-only board kept in the browser
      dev:   true    show developer rows in Settings (also via ?dev=1)
      ========================================================== -->
-<script>window.STB_CONFIG = { relay: "auto", leaderboard: "auto", dev: false };</script>
 </head>
 <body>
 
