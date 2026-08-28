@@ -227,6 +227,15 @@ export class UI extends Emitter {
        handlers were removed - they sat between the same two anchors - which
        left the player stuck on the results screen after every match with no
        way back to the menu or into another round. */
+    /* Every sheet header carries one of these. They are the only way out of
+       BRAINROTS, CUSTOMIZE, LEADERBOARD, QUESTS, LEVELS and SETTINGS on a
+       touch device - Escape covers a desktop, and covered up the fact that
+       nothing was bound here. They are matched by class rather than id, which
+       is also why the dead-button check did not catch them. */
+    for (const b of document.querySelectorAll('.icon-btn.back')) {
+      b.addEventListener('click', () => this.back());
+    }
+
     click('btnAgain', () => this.emit('again'));
     click('btnHome', () => this.emit('home'));
     click('btnRewardAd', () => this.emit('rewardAd'));

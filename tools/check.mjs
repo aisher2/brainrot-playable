@@ -560,6 +560,23 @@ try {
   if (dead.length) {
     throw new Error('buttons with no handler: ' + dead.join(', '));
   }
+  /* Buttons bound by class rather than id - the sheet back arrows. Six of
+     them had no handler and the id scan sailed past, because they carry no
+     id. Escape hid it on a desktop; on a phone every sheet was a dead end.
+
+     Checking `wiring.includes("back")` is not enough and was my first
+     attempt: it matches sfx.back() and this.back(), so it passed with the
+     handler deleted. This looks for something that actually binds a click to
+     that selector. */
+  const classOnly = [...page.matchAll(/<button(?![^>]*\sid=)[^>]*class="([^"]+)"/g)]
+    .map((m) => m[1]);
+  if (classOnly.length) {
+    // must actually bind a click to a .back selector, not merely mention it
+    const bindsBack = /querySelectorAll\([^)]*\.back[^)]*\)[\s\S]{0,200}addEventListener\(\s*['"`]click/.test(wiring);
+    if (!bindsBack) {
+      throw new Error(`${classOnly.length} class-bound buttons (e.g. "${classOnly[0]}") have no click binding`);
+    }
+  }
   console.log(`  ui    all ${ids.length} buttons in the markup are wired`);
   ok++;
 } catch (e) {
