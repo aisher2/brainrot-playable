@@ -18,12 +18,13 @@ page differs.
 Serve `plain-html-js-css` from `google/web-game-samples` unmodified on any
 public HTTPS host and point the Test Suite at it.
 
-We reproduced this by hosting it alongside our own game, at
-`https://brainrot-playables.onrender.com/sample/`, on the same static host with
-identical response headers - so the page was the only variable. That copy has
-since been taken down, because Google's sample has no business sitting inside
-a submission package, but it is two minutes to stand up again: the sample is
-four files and needs no build step.
+We reproduced this by hosting it alongside our own game, on the same static
+host with identical response headers - so the page was the only variable. That
+copy has since been taken down, because Google's sample has no business sitting
+inside a submission package, but it is two minutes to stand up again: the
+sample is four files and needs no build step.
+
+Our game is at `https://steal-the-brainrot.onrender.com`.
 
 **Expected:** MUST 6/6 — it is the reference implementation.
 **Actual:** MUST 5/6, with "SDK loaded before any game code" failing.
@@ -75,6 +76,41 @@ check:
 Step 7 is the significant one: with no game-code resource at all, there is
 nothing that could load before the SDK, and the check still reports that
 something did.
+
+## The parser demonstrably waits for the SDK
+
+Our page is now a single file: the SDK tag, then the whole game in one inline
+`<script>`. A classic `<script src>` blocks the parser, so the inline block
+cannot begin until the SDK has been fetched and executed. We measured that
+rather than assuming it - the inline block's first statement records what it
+can see:
+
+```js
+window.__probe = {
+  atInlineParse: typeof window.ytgame,
+  sdkVersion: (window.ytgame && window.ytgame.SDK_VERSION) || null,
+  resourcesSoFar: performance.getEntriesByType('resource').map((r) => r.name),
+  tParse: performance.now()
+};
+```
+
+Six cache-busted loads against the real SDK endpoint, Chrome:
+
+```
+object / 1.20260824.0100 / t=267
+object / 1.20260824.0100 / t=260
+object / 1.20260824.0100 / t=262
+object / 1.20260824.0100 / t=264
+object / 1.20260824.0100 / t=260
+object / 1.20260824.0100 / t=273
+```
+
+`window.ytgame` is populated, with a version string, before the first byte of
+game code runs. The ~260 ms is the parser blocking on the SDK's 302 and its
+65 kB download. `resourcesSoFar` holds exactly one entry, the SDK itself.
+
+There is no ordering left to get wrong: at the moment game code first runs, the
+SDK is loaded, and no other resource has been fetched at all.
 
 ## Note on the mechanism
 
