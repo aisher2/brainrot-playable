@@ -15,12 +15,15 @@ looks like a problem with the check rather than with either game.
 Both URLs are the same static host, same CDN, same response headers. Only the
 page differs.
 
-| URL | What it is |
-| --- | --- |
-| https://brainrot-playables.onrender.com/sample/ | `plain-html-js-css`, unmodified |
-| https://brainrot-playables.onrender.com | our game |
+Serve `plain-html-js-css` from `google/web-game-samples` unmodified on any
+public HTTPS host and point the Test Suite at it.
 
-Point the Test Suite at the `/sample/` URL.
+We reproduced this by hosting it alongside our own game, at
+`https://brainrot-playables.onrender.com/sample/`, on the same static host with
+identical response headers - so the page was the only variable. That copy has
+since been taken down, because Google's sample has no business sitting inside
+a submission package, but it is two minutes to stand up again: the sample is
+four files and needs no build step.
 
 **Expected:** MUST 6/6 — it is the reference implementation.
 **Actual:** MUST 5/6, with "SDK loaded before any game code" failing.
