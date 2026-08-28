@@ -77,6 +77,19 @@ const YT_CSP = [
 ].join('; ');
 const USE_CSP = argv.includes('--csp');
 
+/* --mock swaps the real SDK script for tools/ytgame-mock.js.
+
+   The real SDK is a no-op outside YouTube, so ads, pause/resume, the audio
+   callback and cloud save never run during development - they ship untested.
+   The mock implements the documented API and adds buttons for the events the
+   host would send.
+
+   It is served from tools/, never copied into dist/, and only when this flag
+   is passed, so there is no path by which a deploy picks it up. */
+const USE_MOCK = argv.includes('--mock');
+const SDK_TAG = '<script src="https://www.youtube.com/game_api/v1"></script>';
+const MOCK_TAG = '<script src="/__ytgame-mock.js"></script>';
+
 function headersFor(ext, isIndex) {
   const h = { 'content-type': TYPES[ext] || 'application/octet-stream' };
   h['cache-control'] = isIndex
@@ -92,14 +105,37 @@ const server = http.createServer((req, res) => {
   let url = decodeURIComponent((req.url || '/').split('?')[0]);
   if (url.endsWith('/')) url += 'index.html';
 
+  // the mock lives outside the served root on purpose
+  if (USE_MOCK && url === '/__ytgame-mock.js') {
+    const p = path.join(BASE, 'tools', 'ytgame-mock.js');
+    fs.readFile(p, (e, b) => {
+      if (e) { res.writeHead(404).end('mock missing'); return; }
+      res.writeHead(200, { 'content-type': TYPES['.js'], 'cache-control': 'no-store' }).end(b);
+    });
+    return;
+  }
+
   // never let a path escape the served directory
   const file = path.normalize(path.join(ROOT, url));
   if (!file.startsWith(ROOT)) { res.writeHead(403).end('forbidden'); return; }
 
-  fs.readFile(file, (err, buf) => {
+  fs.readFile(file, (err, buf0) => {
+    let buf = buf0;
     if (err) { res.writeHead(404, { 'content-type': 'text/plain' }).end('not found'); return; }
     const ext = path.extname(file).toLowerCase();
-    const head = headersFor(ext, url.endsWith('index.html'));
+    const isIndex = url.endsWith('index.html');
+    const head = headersFor(ext, isIndex);
+
+    /* Substitute rather than append: two SDKs on one page would race, and the
+       mock refuses to install if a real ytgame already exists. */
+    if (USE_MOCK && isIndex) {
+      const html = buf.toString('utf8');
+      if (!html.includes(SDK_TAG)) {
+        console.warn('--mock: could not find the SDK tag to replace');
+      } else {
+        buf = Buffer.from(html.replace(SDK_TAG, MOCK_TAG), 'utf8');
+      }
+    }
 
     const accepts = String(req.headers['accept-encoding'] || '').includes('gzip');
     if (accepts && TEXTUAL.has(ext) && buf.length > 1024) {
