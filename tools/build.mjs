@@ -17,6 +17,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import zlib from 'node:zlib';
 import crypto from 'node:crypto';
 
@@ -248,22 +249,25 @@ const css = fs.readFileSync(path.join(ROOT, 'styles.css'), 'utf8')
 
    The standalone build inlines both files, so it keeps the unstamped html. */
 const stamp = (buf) => crypto.createHash('sha256').update(buf).digest('hex').slice(0, 8);
-/* The bundle is attached by script rather than written as a <script src>.
+/* Why the game is inlined rather than written as a <script src>.
 
-   This is the fix for "SDK loaded before any game code". Execution order was
-   never wrong - a parser-blocking script in the head always runs before a
-   deferred one - but the check is about LOADING, and the browser's preload
-   scanner fetches anything it can see in the markup immediately. Measured on
-   the built page: bundle.js finished downloading at 128ms while the SDK,
-   coming from youtube.com, did not finish until 852ms. The game code was
-   loaded 725ms before the SDK, exactly what the check names.
+   The first theory about "SDK loaded before any game code" was that the
+   check measured LOADING: the preload scanner fetches anything it can see in
+   the markup immediately, and on the built page bundle.js finished
+   downloading at 128ms while the SDK, coming from youtube.com, did not
+   finish until 852ms. Removing the <script src> removes that request
+   entirely, so the theory was worth acting on and inlining stayed.
 
-   With no <script src> in the markup there is nothing for the scanner to
-   find, so the bundle is not requested until the line below runs - and that
-   line cannot run until the SDK script above it has loaded and executed,
-   because that one blocks the parser. The cost is real: the bundle can no
-   longer download in parallel with the SDK. Correctness wins here, and
-   gameReady still lands well inside the 5 second guidance. */
+   It was not the cause. Reading the SDK shows firstFrameReady() taking the
+   first script element in the document and requiring it to be the SDK's tag
+   with neither defer nor async - a DOM snapshot, which this page satisfied
+   throughout. What the certification harness additionally checks is *when*
+   game code first evaluated, and no amount of tag ordering helps there: a
+   classic inline script runs the instant the parser reaches it.
+
+   The fix is the module gate below - see SDK_GATE. Inlining is kept because
+   it costs one less round trip and leaves the SDK as the only external file
+   the markup names. */
 /* The stylesheet is inlined and the icon files dropped. Google's sample does
    keep an external stylesheet, so this is not required for certification -
    but it removes a round trip on first load and leaves the SDK as the only
@@ -297,7 +301,52 @@ if (html.includes('styles.css')) fail('the stylesheet is still an external reque
 if (/<\/script/i.test(bundle)) {
   fail('the bundle contains a closing script tag and cannot be inlined');
 }
-const inlineBundle = '<script>' + bundle + '</script>';
+/* ------------------------------------------------------------
+   The SDK gate, prepended inside the module that carries the bundle.
+
+   The SDK's own firstFrameReady() runs, in effect:
+
+     Array.from(document.getElementsByTagName('script'))
+       .filter((b) => !b.src.endsWith('/@vite/client'))[0]
+
+   and requires that element to be the SDK's tag, with neither a defer
+   nor an async attribute. That is a DOM snapshot, and this page has
+   always satisfied it - measured, not assumed. The certification
+   harness swaps in an instrumented SDK that also checks *when* game
+   code first evaluated, and a classic inline script cannot satisfy
+   that: it runs the moment the parser reaches it.
+
+   Top-level await is the only construct that blocks evaluation of
+   everything below it, and it exists only in modules - which is why the
+   bundle ships as type="module". This is the same shape as Google's own
+   phaserjs template: a blocking classic SDK tag, then the game as a
+   module after it.
+   ------------------------------------------------------------ */
+const SDK_GATE = `
+/* Nothing below this line - not one module registration - evaluates
+   until the SDK namespace is present. Do not "fix" this by moving the
+   bundle into eval, new Function or an injected script element: that
+   hides game code from order detection rather than satisfying it, and
+   it is what failed certification before.
+
+   The sdkReady()-before-boot() gate in core/platform.js still runs too.
+   That one gates gameplay start; this one gates evaluation. */
+await (function waitForSdk(timeoutMs = 3000) {
+  const namespaceLoaded = () => {
+    try { return !!globalThis.ytgame; } catch (_) { return false; }
+  };
+  if (namespaceLoaded()) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const t0 = Date.now();
+    (function tick() {
+      if (namespaceLoaded()) return resolve(true);
+      if (Date.now() - t0 >= timeoutMs) return resolve(false);
+      setTimeout(tick, 30);
+    })();
+  });
+})();
+`;
+const inlineBundle = '<script type="module">' + SDK_GATE + bundle + '</script>';
 
 const hashed = html
   .replace('<script src="bundle.js" defer></script>', '')
@@ -338,21 +387,29 @@ console.log(`\n  ${modules.size} modules bundled, ${bundle.split('\n').length} l
 console.log('  offline:   no relay, no board, no external gameplay calls');
 console.log('  playables: SDK script tag included');
 
-/* Syntax-check what actually ships. This used to run `node --check` against
-   dist/bundle.js, which no longer exists now the game is inlined - so the
-   check is against the inline script pulled back out of the generated page,
-   which is closer to the truth anyway: it validates the bytes the browser
-   will parse, not an intermediate artifact. new Function parses without
-   executing, so nothing runs here. */
+/* Syntax-check what actually ships: the inline module pulled back out of
+   the generated page. This used to use new Function(), which parses without
+   executing - but new Function builds a *function body*, and the SDK gate
+   uses top-level await, which is legal only in a module. So the check writes
+   the script to a temp .mjs (outside dist/, which stays a single file) and
+   lets `node --check` parse it with module semantics, which is how the
+   browser will parse it too. */
 const emitted = fs.readFileSync(path.join(DIST, 'index.html'), 'utf8');
-const inlineOpen = emitted.lastIndexOf('<script>');
+const MODULE_TAG = '<script type="module">';
+const inlineOpen = emitted.lastIndexOf(MODULE_TAG);
 const inlineClose = emitted.lastIndexOf('</script>');
-if (inlineOpen < 0 || inlineClose < inlineOpen) fail('no inline game script in index.html');
+if (inlineOpen < 0 || inlineClose < inlineOpen) fail('no inline game module in index.html');
+const emittedScript = emitted.slice(inlineOpen + MODULE_TAG.length, inlineClose);
+const { execFileSync } = await import('node:child_process');
+const probe = path.join(os.tmpdir(), `stb-syntax-${process.pid}.mjs`);
 try {
-  // eslint-disable-next-line no-new-func
-  new Function(emitted.slice(inlineOpen + 8, inlineClose));
+  fs.writeFileSync(probe, emittedScript);
+  execFileSync(process.execPath, ['--check', probe], { stdio: 'pipe' });
 } catch (e) {
-  fail('the inlined game script is not valid JavaScript: ' + e.message);
+  fail('the inlined game module is not valid JavaScript: '
+    + (e.stderr?.toString() || e.message));
+} finally {
+  try { fs.unlinkSync(probe); } catch (_) { /* nothing to clean up */ }
 }
 console.log('  inlined game script parses cleanly');
 console.log('\n  serve it with:  node server/server.js --root dist\n');

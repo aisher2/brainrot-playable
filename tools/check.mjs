@@ -330,9 +330,13 @@ try {
   /* The game ships inlined, so there is no bundle.js to audit. Pull the
      inline script back out of the page - that is the code that actually
      runs, which is what these assertions are about. */
-  const bundleOpen = page.lastIndexOf('<script>');
+  const MODULE_TAG = '<script type="module">';
+  const bundleOpen = page.lastIndexOf(MODULE_TAG);
+  /* Fail here rather than slicing from -1, which would hand every assertion
+     below the whole document and diagnose the wrong thing. */
+  if (bundleOpen < 0) throw new Error('no <script type="module"> carrying the bundle');
   const bundleClose = page.lastIndexOf('</script>');
-  const bundle = page.slice(bundleOpen + 8, bundleClose);
+  const bundle = page.slice(bundleOpen + MODULE_TAG.length, bundleClose);
   if (bundle.length < 100000) throw new Error('the inlined game script looks too small');
 
   const banned = ['XMLHttpRequest', 'WebSocket', 'EventSource', 'sendBeacon',
@@ -361,7 +365,7 @@ try {
      tags at the start of an element, so a `<script>` written inside the
      inlined JS - in a comment, say - is not miscounted as a third. */
   const scripts = [...page.matchAll(/<script(?:\s[^>]*)?>/g)].map((m) => m[0]);
-  const realScripts = scripts.filter((t, i) => i < 2 || !t.startsWith('<script>'));
+  const realScripts = scripts.slice(0, 2);
   if (scripts.length < 2 || !scripts[0].includes('game_api/v1')) {
     throw new Error('the SDK is not the first script in the document');
   }
@@ -371,9 +375,27 @@ try {
   if (!scripts[0].includes('game_api/v1')) {
     throw new Error('the first script is not the Playables SDK');
   }
-  // charset first, then the SDK, then everything else
-  if (page.indexOf('charset') > page.indexOf('<script')) {
-    throw new Error('<meta charset> must come before the first script');
+  /* firstFrameReady() takes the first script element in the document and
+     requires it to be the SDK with neither attribute set. Both would
+     otherwise be easy to reintroduce for a plausible-sounding reason. */
+  if (/\sdefer|\sasync/.test(scripts[0])) {
+    throw new Error('the SDK tag must carry neither defer nor async');
+  }
+  /* The bundle must be a module: the SDK gate uses top-level await, which is
+     the whole mechanism by which no game code evaluates before the SDK. A
+     classic script would silently drop that guarantee. */
+  if (!scripts[1].startsWith('<script type="module">')) {
+    throw new Error('the game bundle must ship as <script type="module">');
+  }
+  if (!bundle.includes('await (function waitForSdk')) {
+    throw new Error('the top-level SDK gate is missing from the bundle');
+  }
+  /* The SDK tag sits above <meta charset> so that it is unambiguously the
+     first script. That is fine as long as the encoding declaration still
+     lands inside the first 1024 bytes, which is all the HTML spec asks. */
+  const charsetAt = Buffer.byteLength(page.slice(0, page.indexOf('charset')), 'utf8');
+  if (charsetAt >= 1024) {
+    throw new Error(`<meta charset> starts at byte ${charsetAt}; must be under 1024`);
   }
   /* The SDK must be the first resource the page fetches, so the markup may
      name no other external file at all. The stylesheet is inlined and the

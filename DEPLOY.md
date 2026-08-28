@@ -91,7 +91,13 @@ The build already satisfies the technical requirements: one HTTPS origin, the
 SDK loaded as the first script, no external calls, no copyrighted assets, and
 `firstFrameReady` / `gameReady` signalled at the right moments.
 
-One check in the Playables Test Suite, **"SDK loaded before any game code"**,
-reports a failure. It also fails for Google's own
-`plain-html-js-css` sample served unmodified from the same host, which is what
-`docs/sdk-load-order-report.md` documents. Everything else passes.
+The Test Suite reports **MUST 6/6** and **SHOULD 2/2**.
+
+"SDK loaded before any game code" was the last one to fall, and it needed a
+real change rather than reordering: the bundle ships as `<script
+type="module">` with a top-level `await` gating it. Top-level await is the
+only construct that blocks evaluation of everything below it, and it exists
+only in modules - a classic inline script runs the moment the parser reaches
+it, however far down the document it sits. `tools/check.mjs` asserts the
+module tag, the gate, and that the SDK tag carries neither `defer` nor
+`async`, since the SDK inspects exactly that.
