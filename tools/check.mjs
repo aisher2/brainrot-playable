@@ -584,5 +584,40 @@ try {
   bad++;
 }
 
+/* ---- el() sets textContent, so nothing may hand it markup ----
+
+   el() was changed to textContent so a name loaded from a save can never be
+   markup, with elHtml() kept for the few places that genuinely need it. Two
+   call sites were missed, and because textContent renders tags literally, the
+   quests screen printed "<span>Land 20 dash hits</span><em>+120</em>" at the
+   player. It is a silent failure - no error, just wrong pixels - so it is
+   worth a test rather than another pair of eyes. */
+try {
+  const ui = fs.readFileSync(path.join(SRC, 'ui/ui.js'), 'utf8');
+  /* Line-based on purpose. Regex escaping through the tooling that writes
+     this file has corrupted patterns more than once in this project - an
+     earlier version of this very check had a stray control character in it
+     and matched nothing, passing while the bug was present. */
+  const offenders = [];
+  ui.split(String.fromCharCode(10)).forEach((line, n) => {
+    const call = line.indexOf('el(');
+    if (call < 0) return;
+    if (line.slice(Math.max(0, call - 4), call + 3).includes('elHtml')) return;
+    const args = line.slice(call);
+    const hasTag = /<[a-zA-Z]/.test(args) && args.includes('>');
+    const hasEntity = /&[a-zA-Z]+;/.test(args) || /&#[0-9]+;/.test(args);
+    if (hasTag || hasEntity) offenders.push(`line ${n + 1}: ${line.trim().slice(0, 64)}`);
+  });
+  if (offenders.length) {
+    throw new Error('el() handed markup or an HTML entity: ' + offenders.join(' | '));
+  }
+  console.log('  ui    no markup is passed to el(); textContent stays safe');
+  ok++;
+} catch (e) {
+  console.error('  FAIL  markup in el()' + String.fromCharCode(10) + '        ' + e.message);
+  bad++;
+}
+
+
 console.log(`\n${bad ? '❌' : '✅'} ${ok} passed, ${bad} failed`);
 process.exit(bad ? 1 : 0);

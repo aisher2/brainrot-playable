@@ -644,7 +644,7 @@ export class UI extends Emitter {
     for (const c of challenges || []) row('CHALLENGE: ' + c.text, '+' + c.coins + ' 🧠', 'new');
     for (const a of achievements || []) row('ACHIEVEMENT: ' + a.name, '+' + a.coins + ' 🧠', 'new');
     for (const u of unlocked || []) row('UNLOCKED: ' + u.item.name, u.slot.toUpperCase(), 'new');
-    if (hidden) list.appendChild(el('div', 'rw more', `+${hidden} MORE - SEE QUESTS &amp; CUSTOMIZE`));
+    if (hidden) list.appendChild(el('div', 'rw more', `+${hidden} MORE - SEE QUESTS & CUSTOMIZE`));
 
     this._refreshLevel();
   }
@@ -949,15 +949,21 @@ export class UI extends Emitter {
       host.innerHTML = '';
       for (const q of items) {
         const d = el('div', 'quest' + (q.done ? ' done' : ''));
-        d.appendChild(el('div', 't',
-          `<span>${q.text || q.name}</span><em>${q.done ? '✓ DONE' : '+' + q.coins + ' 🧠'}</em>`));
+        /* Built as nodes, not a markup string. el() sets textContent - that is
+           the point of it, so a name from a save file can never be markup - so
+           handing it "<span>..." printed the tags on screen instead of
+           rendering them. Every quest and achievement row showed its own HTML. */
+        const t = el('div', 't');
+        t.appendChild(el('span', '', q.text || q.name));
+        t.appendChild(el('em', '', q.done ? '✓ DONE' : '+' + q.coins + ' 🧠'));
+        d.appendChild(t);
         const pb = el('div', 'pb');
         const fill = el('i');
         fill.style.width = Math.round(clamp01(q.value / q.goal) * 100) + '%';
         pb.appendChild(fill);
         d.appendChild(pb);
         if (q.desc) {
-          const sub = el('div', '', `${q.desc} &middot; ${Math.floor(q.value)}/${q.goal}`);
+          const sub = el('div', '', `${q.desc} · ${Math.floor(q.value)}/${q.goal}`);
           sub.style.cssText = 'font-size:9px;opacity:.5;font-family:system-ui;font-weight:600';
           d.appendChild(sub);
         } else {
