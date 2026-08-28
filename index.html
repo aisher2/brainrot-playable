@@ -84,7 +84,7 @@
     <div class="tagline">grab it &middot; hold it &middot; get bonked &middot; steal it back</div>
 
     <div class="menu-btns">
-      <button class="btn play" id="btnPlay"><span>PLAY</span><small id="playSub">1v1 &middot; 60 seconds</small></button>
+      <button class="btn play" id="btnPlay"><span>PLAY</span><small id="playSub">60 seconds &middot; vs the AI</small></button>
       <div class="btn-row">
         <button class="btn small" id="btnBrainrots"><i>🧠</i><span>BRAINROTS</span></button>
         <button class="btn small" id="btnCustomize"><i>🎩</i><span>CUSTOMIZE</span></button>
@@ -131,7 +131,7 @@
   <section class="screen dim" id="s-search">
     <div class="search-wrap">
       <div class="radar"><i></i><i></i><i></i></div>
-      <h2 id="searchTitle">SEARCHING FOR OPPONENT...</h2>
+      <h2 id="searchTitle">GETTING READY...</h2>
       <div class="vsrow">
         <div class="vscard me"><div class="av" id="mmMeAv">🙂</div><b id="mmMeName">YOU</b></div>
         <div class="vs">VS</div>
@@ -145,9 +145,9 @@
   <!-- ---------- IN-MATCH HUD ---------- -->
   <section class="screen hud" id="s-hud">
     <div class="hud-top">
-      <div class="score p1" id="scoreP1"><b class="nm">PLAYER 1</b><span class="sc">0</span><i class="hold"></i></div>
+      <div class="score p1" id="scoreP1"><b class="nm">YOU</b><span class="sc">0</span><i class="hold"></i></div>
       <div class="timer" id="timerBox"><small>TIME</small><b id="timeNum">60</b></div>
-      <div class="score p2" id="scoreP2"><b class="nm">PLAYER 2</b><span class="sc">0</span><i class="hold"></i></div>
+      <div class="score p2" id="scoreP2"><b class="nm">RIVAL</b><span class="sc">0</span><i class="hold"></i></div>
     </div>
 
     <div class="holderbar" id="holderBar"><span id="holderTxt">BRAINROT IS LOOSE!</span></div>
@@ -193,7 +193,7 @@
     <div class="result-wrap">
       <div class="crown" id="resultCrown">🏆</div>
       <h2 class="resulttitle" id="resultTitle">WINNER!</h2>
-      <div class="winner-name" id="winnerName">PLAYER 1</div>
+      <div class="winner-name" id="winnerName"></div>
       <div class="resultlevel" id="resultLevel" hidden></div>
       <div class="statgrid" id="statGrid"></div>
       <div class="rewards" id="rewardList"></div>

@@ -103,7 +103,7 @@ export class UI extends Emitter {
     this.previewT = 0;
     this.toastCd = 0;
     this.lastScores = [0, 0];
-    this.names = ['PLAYER 1', 'PLAYER 2'];
+    this.names = ['YOU', 'RIVAL'];   // replaced by setMatchNames each round
     this._soloTimer = 0;
     this._searchBase = '';
     this._bind();
