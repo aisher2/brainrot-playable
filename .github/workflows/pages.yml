@@ -1,17 +1,10 @@
 # Publish the game to GitHub Pages on every push to main.
 #
-# IMPORTANT: Pages serves static files only - it cannot run a WebSocket
-# server. On its own, this deploy gives you PRACTICE VS BOT and nothing else:
-# no real 1v1, no friend rooms, no world leaderboard.
+# Pages is a static host, which is now all this game needs: the build produces
+# a single self-contained index.html and there is no server left to run.
 #
-# To get those, run server/server.js somewhere that can hold a socket open
-# (Fly.io, Render, Railway - see DEPLOY.md) and point this build at it by
-# setting two repository *variables* under
-#   Settings -> Secrets and variables -> Actions -> Variables
-#     RELAY_URL        wss://your-app.fly.dev/ws
-#     LEADERBOARD_URL  https://your-app.fly.dev/api
-# Leave them unset and the build honestly reports multiplayer as off rather
-# than trying a socket that cannot exist.
+# Render (see render.yaml) is the primary URL; this is a second free one, handy
+# as a backup while a submission is in review.
 
 name: Deploy to GitHub Pages
 
@@ -40,26 +33,17 @@ jobs:
         with:
           node-version: '20'
 
-      # Zero dependencies, so there is nothing to install - go straight to the
-      # checks. A broken build should never reach Pages.
+      # Build before checking: the audit inspects the emitted page, so it has
+      # nothing to read until dist/ exists. Zero dependencies, so there is no
+      # install step.
+      - name: Build
+        run: node tools/build.mjs
+
       - name: Verify
         run: |
           node tools/check.mjs
           node tools/mapcheck.mjs
-
-      - name: Build
-        env:
-          RELAY: ${{ vars.RELAY_URL }}
-          BOARD: ${{ vars.LEADERBOARD_URL }}
-        run: |
-          # The world leaderboard is plain HTTP and the API sends CORS, so
-          # Pages can borrow the board on the Node host even though Pages
-          # itself cannot run a server. Set the repo variables to override.
-          node tools/build.mjs \
-            --relay="${RELAY:-off}" \
-            --leaderboard="${BOARD:-https://steal-the-brainrot.onrender.com/api}"
-          # Pages runs Jekyll by default, which drops files beginning with _
-          touch dist/.nojekyll
+          node tools/solocheck.mjs
 
       - uses: actions/upload-pages-artifact@v3
         with:

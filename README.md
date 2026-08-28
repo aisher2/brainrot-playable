@@ -1,57 +1,43 @@
 # 🧠 Steal the Brainrot
 
-A 60-second, 2-player, real-time brawl for **YouTube Playables**.
-Two players are matched into a small arena. A ridiculous collectible — the
-Brainrot — drops in the middle. Whoever holds it scores. Whoever doesn't holds
-a grudge, and a dash button.
+A 60-second arena brawl for **YouTube Playables**. A ridiculous collectible —
+the Brainrot — drops in the middle of a small arena. Whoever holds it scores.
+Whoever doesn't holds a grudge, and a dash button.
 
 ```
-CLICK PLAY → MATCH → RUN → STEAL → CHAOS → WIN → PLAY AGAIN
+PLAY → RUN → STEAL → CHAOS → WIN → PLAY AGAIN
 ```
+
+You play against an on-device opponent. There is no server, no matchmaking and
+no network traffic of any kind — see [Offline by construction](#offline-by-construction).
 
 ---
 
-> **Deploying it?** See **[DEPLOY.md](DEPLOY.md)** for step-by-step instructions
-> to get a public HTTPS URL (static host in ~2 minutes, or a Node host that
-> also runs the multiplayer relay).
+> **Deploying it?** See **[DEPLOY.md](DEPLOY.md)**. The build is one HTML file,
+> so any static host will do.
 
 ## Run it
 
 ```bash
-node server/server.js
+npm run build   # writes dist/index.html
+npm start       # serve it on http://localhost:8080
 ```
 
-Then open <http://localhost:8080>. That one command serves the game, runs the
-matchmaking relay, hands out friend-room codes and keeps the world leaderboard
-— no `npm install`, no dependencies, Node 18+.
-
-To test real multiplayer, open the URL in **two tabs** and press **PLAY** in
-both. To play with someone specific, use **PLAY WITH A FRIEND** — one side
-creates a room and reads out the 4-character code, the other types it in. To
-play alone, press **PRACTICE vs BOT**.
-
-The world leaderboard is stored in `$DATA_DIR/leaderboard.json` (default
-`./data/`), rewritten within a second of any change. On a host with an
-ephemeral filesystem, point `DATA_DIR` at a persistent disk or the board resets
-on each redeploy — see [DEPLOY.md](DEPLOY.md).
+No `npm install`, no dependencies, Node 18+.
 
 | Command | What it does |
 | --- | --- |
-| `node server/server.js` | game + relay on :8080 |
-| `PORT=3000 node server/server.js` | pick a port |
-| `DATA_DIR=/data node server/server.js` | keep the world leaderboard somewhere persistent |
-| `node server/server.js --root dist` | serve the built bundle |
-| `node server/server.js --dev` | additionally accept screenshots from `tools/devkit.js` |
-| `node tools/check.mjs` | import every module + simulate a full headless round |
-| `node tools/netcheck.mjs` | boot the relay, connect two real clients, play a full round |
-| `node tools/playcheck.mjs` | two players press PLAY and get each other, not bots |
-| `node tools/servercheck.mjs` | the world board survives a restart; friend codes pair the right two people |
-| `node tools/friendcheck.mjs` | CREATE A ROOM works the way `main.js` drives it, retries included |
-| `node tools/mapcheck.mjs` | every arena is symmetric, spawns are clear, the map pick is deterministic |
-| `node tools/check.mjs` | ...also verifies every ability fires, lands and serialises |
-| `node tools/build.mjs --single` | bundle into `dist/` (real 1v1 via this host) |
-| `node tools/build.mjs --relay=off` | ...static-host build, practice only |
-| `node tools/build.mjs --playables` | ...with the YouTube Playables SDK tag |
+| `npm run build` | bundle everything into a single `dist/index.html` |
+| `npm start` | serve `dist/` on :8080 |
+| `npm run start:csp` | ...under YouTube's exact Content-Security-Policy |
+| `npm run start:mock` | ...with a fake Playables host, so SDK paths actually run |
+| `npm run checkall` | build, then run all 32 checks |
+| `node tools/check.mjs` | imports, a full headless round, storage, UI wiring, the offline audit |
+| `node tools/solocheck.mjs` | a complete round plays out with no server present |
+| `node tools/mapcheck.mjs` | every arena is symmetric, spawns are clear, map picks are deterministic |
+
+Build before checking. The audit reads the emitted page, so it has nothing to
+inspect until `dist/` exists.
 
 ---
 
@@ -86,18 +72,14 @@ one banks a charge; using the ability spends it. You can hold two of each.
 | 🍌 **Banana Slip** | Lobs a peel that arms where it lands. The other player slips, drops the Brainrot, and you score **+5**. Two live at a time. | common |
 | 👑 **Brainrot Magnet** | Rips the Brainrot out of their hands and reels it toward you for 1.5s. | rare |
 
-Each orb carries a 3D emblem of the same icon as its HUD button - a boot, a
-peel, a crown - so you can tell what it grants before walking to it.
+Each orb carries a 3D emblem of the same icon as its HUD button — a boot, a
+peel, a crown — so you can tell what it grants before walking to it.
 
 Orbs always arrive as a **180-degree mirrored pair**, so neither spawn is ever
-closer to a drop than the other - the same fairness rule the maps follow. Six
-can be alive at once and an untouched one fades after 24s. Each carries a short
-shaft of light so you can find it without hunting.
+closer to a drop than the other — the same fairness rule the maps follow. Six
+can be alive at once and an untouched one fades after 24s.
 
-Which orb you get is rolled from the simulation's own seeded RNG, so both
-clients agree on every drop without it going over the wire.
-
-Dash is *not* pickup-gated - it is core movement and the steal mechanic is
+Dash is *not* pickup-gated. It is core movement, and the steal mechanic is
 built on it, so it keeps its own short cooldown.
 
 Everything aims from the direction you are already facing, so a phone needs no
@@ -109,29 +91,36 @@ second stick and a keyboard needs no mouse.
 
 | | How you score |
 | --- | --- |
-| **CLASSIC** | hold the Brainrot. +1 every 0.25s, +10 for a steal - and you steal it by **touching** the holder, no button |
-| **HOT POTATO** | the Brainrot is armed. Holding pays **nothing** - you score by offloading it (+3) and by being the one not holding it when it goes off (+18) |
+| **CLASSIC** | hold the Brainrot. +1 every 0.25s, +10 for a steal — and you steal it by **touching** the holder, no button |
+| **TAG BOMB** | the Brainrot is armed. Holding pays **nothing** — you score by offloading it (+3) and by being the one not holding it when it goes off (+18) |
 
 The fuse starts at 6.5s and tightens to 3.0s by the end of the round, so late
 passes get frantic. The Brainrot reddens, smokes and shakes the camera as it
 gets close, so you never need to watch a number.
 
-The magnet is not in TAG BOMB. It exists to rip a loose brainrot out of the
-air, and the bomb is strapped on and never loose - so it had nothing to do.
+The magnet is not in TAG BOMB. It exists to rip a loose Brainrot out of the
+air, and the bomb is strapped on and never loose — so it had nothing to do.
 Only the kick and the banana drop there.
 
-Practice uses whichever mode is selected on the menu. Online matches derive
-it from the shared seed - the same trick the maps use - so both clients agree
-without another wire field, and the mode is announced next to the map name at
-the start of the round.
+---
+
+## The level ladder
+
+Twelve hand-tuned stages in `src/data/levels.js`. Each pins its own map,
+variant and bot difficulty rather than rolling them, so a level is the same
+challenge for everyone and a 3-star run means the same thing on any device.
+
+Clearing one requires a stated goal — win the round, reach a score, or make a
+number of tags — and two further thresholds award the second and third star.
+`tools/check.mjs` asserts that every stage's goal and star targets stay
+consistent with its variant.
 
 ---
 
 ## The maps
 
 Five arenas in `src/game/maps.js`. Which one you get is derived from the match
-seed, so a real 1v1 and a bot match both land on a random map and **both
-clients compute the same one without it ever going over the wire**.
+seed.
 
 | Map | Character |
 | --- | --- |
@@ -143,7 +132,7 @@ clients compute the same one without it ever going over the wire**.
 
 The roaming platforms are **trampolines**: land on one and it launches you
 about twice as high as a static bounce pad, and harder the harder you come
-down. The impact bonus is capped so the bounce cannot feed itself into orbit -
+down. The impact bonus is capped so the bounce cannot feed itself into orbit —
 `mapcheck` asserts both the launch and the ceiling.
 
 Every map is 180-degree symmetric. The spawns are fixed at `(0, ±11)`, so an
@@ -182,6 +171,7 @@ src/
   main.js             boot, the frame loop, round lifecycle
   core/
     util.js           math, seeded RNG, event bus, colour helpers
+    platform.js       the Playables SDK adapter (inert outside YouTube)
     storage.js        profile persistence (ytgame SDK → localStorage → memory)
     input.js          keyboard + mouse + gamepad + touch joystick, one API
     audio.js          every sound, synthesized: no audio files are downloaded
@@ -194,24 +184,36 @@ src/
     studio.js         offscreen renderer for menu thumbnails
   game/
     arena.js          arena geometry + collision + the moving parts
+    maps.js           the five arenas, as data
     sim.js            the authoritative simulation (no DOM, no randomness)
-    match.js          host/client sessions, snapshots, rollback
+    solo.js           the match loop: your input and the bot's, one sim
+    bot.js            the opponent
     view.js           animation, effects, camera, nameplates
-  net/
-    protocol.js       the wire contract
-    transport.js      WebSocket + an in-page loopback for practice
-    netclient.js      matchmaking
-    bot.js            the PRACTICE opponent (never used online)
-    leaderboard.js    local board now, one endpoint away from global
+    scores.js         this device's board, kept in the saved profile
   data/
     brainrots.js      28 original characters as shape recipes
     cosmetics.js      skins, hats, faces, trails, emotes, victories, plates
+    levels.js         the 12-stage ladder
     progression.js    XP curve, daily challenges, achievements
   ui/ui.js            every screen and the HUD
 server/
-  server.js           static host + matchmaking relay
-  ws.js               a minimal RFC 6455 server (zero dependencies)
+  server.js           a static file host, for looking at the build locally
 ```
+
+### Offline by construction
+
+A Playable is not permitted to call out, so the networking here is not disabled
+— it is gone. There is no `src/net/`, no relay, no `/ws`, no `/api` and no
+world leaderboard. `server/server.js` serves files and holds no state.
+
+Both players live in one simulation (`game/solo.js`), so there is no wire to
+pack for, no latency to predict around and nothing to reconcile. Each fixed
+tick reads your input and the bot's, and steps the sim once.
+
+The offline audit in `tools/check.mjs` asserts this against the built page
+rather than trusting the source: no `WebSocket`, no `fetch`, no
+`XMLHttpRequest` and no external origin survives into `dist/index.html`. The
+only external resource the page names at all is the Playables SDK.
 
 ### Nothing is downloaded but code
 
@@ -229,37 +231,6 @@ There are no model files, no textures, no audio files, no web fonts.
 
 A full round renders in **13–31 draw calls**.
 
-### Networking
-
-The server never simulates. It pairs two real players, elects a host, hands
-both the same seed, and forwards bytes.
-
-```
-player A ──┐                    ┌── player B
-           ├── relay (server) ──┤
-    host   ┘                    └   client
-     │                                │
-     │  20Hz snapshots  ───────────►  │  applies, then re-simulates its own
-     │  ◄───────────  30Hz inputs     │  inputs on top (rollback)
-```
-
-* The host runs `stepSim` at a fixed 60Hz and broadcasts the whole state (it is
-  ~96 numbers, about **0.4 kB per snapshot**).
-* The client runs the *same* `stepSim`, predicts its own player immediately,
-  and on each snapshot rewinds to the authoritative tick and replays its stored
-  inputs. Measured over a full round: **median correction 0.01 units, p95 0.13**.
-* `game/view.js` smooths everything it draws, so even a large correction
-  slides rather than teleports.
-
-`sim.js` has no DOM, no audio and no `Math.random` — only a seeded RNG carried
-inside the state. Moving the host into a Node process later is a lift-and-shift:
-the same module already runs headless in `tools/check.mjs`.
-
-**Practice mode** runs the identical protocol over an in-page loopback
-(`transport.js → localPair`), with `net/bot.js` on the far end. Online
-matchmaking never pairs you with a bot, and the bot is labelled as one
-everywhere it appears.
-
 ### Performance
 
 * Geometry detail is chosen once at boot from `deviceMemory`,
@@ -275,52 +246,46 @@ everywhere it appears.
 `core/storage.js` tries, in order: the YouTube Playables SDK
 (`window.ytgame.game.saveData`), `localStorage`, then memory. Everything the
 player earns lives in one JSON blob, written debounced and flushed on
-`pagehide`.
+`pagehide`. Cloud writes are held to the documented 3 MiB of UTF-16 and are
+made well-formed first, so a lone surrogate cannot fail a save.
 
 ---
 
-## Hooking up your own backend
+## The Playables SDK
 
-| What | Where | How |
-| --- | --- | --- |
-| Matchmaking relay | Settings → **MULTIPLAYER SERVER**, or `defaultServerUrl()` in `net/protocol.js` | blank = `ws(s)://<page origin>/ws` |
-| Global leaderboard | `window.STB_CONFIG.leaderboard` in `index.html` | `"auto"` = `/api` on this origin. Any host answering `GET /top?limit=25` and `POST /score` works |
-| Cloud saves | `core/storage.js` | add a backend next to `ytgame` / `localStorage` |
-| Authoritative server | `game/match.js` | implement the `P.*` half of `net/protocol.js` server-side and drop `HostSession` in |
+`core/platform.js` is the only thing that touches `window.ytgame`. It reports
+`firstFrameReady` when the first frame is on screen and `gameReady` when the
+menu is interactive, mirrors the host's audio setting, pauses and resumes with
+the host, sends a score at the end of a round, and offers both ad types.
 
-The relay is stateless apart from the queue and the open friend rooms. It
-rate-limits each socket, sanitizes profiles, and drops a room when either side
-disappears (the survivor gets the win rather than a hang). Friend codes are
-single-use, expire after 15 minutes, and are drawn from an alphabet with no
-lookalike glyphs so they can be read aloud.
-
-The leaderboard is a single JSON file, top 200, one row per player with their
-best score. It caps submissions at 40/hour per address and refuses anything
-above 2000 points. The score is still self-reported by the client, so it is a
-friendly scoreboard rather than a ranked ladder.
+Outside YouTube the SDK sets `IN_PLAYABLES_ENV` to false and every call is a
+no-op, which means none of those paths run during ordinary development.
+`npm run start:mock` substitutes `tools/ytgame-mock.js`, which implements the
+documented API and adds buttons for the events the host would otherwise send —
+pause, resume, an audio change, a failed ad, a declined reward. It is served
+from `tools/`, never copied into `dist/`, and only behind that flag.
 
 ---
 
 ## Verification
 
+`npm run checkall` builds and then runs 32 checks:
+
 ```
 node tools/check.mjs
-  24 modules import clean; a full 60s round simulates with nobody
-  leaving the arena and the wire format round-trips losslessly
+  24 modules import clean; a full 60s round simulates with nobody leaving
+  the arena; storage falls back correctly when it is denied; every button
+  in the markup is wired; no markup reaches el(); the built page makes no
+  external calls
 
-node tools/netcheck.mjs
-  relay booted, two real WebSocket clients queued and paired,
-  3890 ticks played, host and client agree on every score,
-  1296 snapshots, rollback p50 0.010u / p95 0.134u,
-  disconnect mid-round hands the win to the player who stayed
+node tools/solocheck.mjs
+  a full round plays out end to end with no server running
 
-node tools/servercheck.mjs
-  the world leaderboard sorts, keeps one row per player, refuses
-  implausible scores and survives a hard kill; friend codes pair the
-  right two people, fail cleanly when wrong, and cannot be reused
+node tools/mapcheck.mjs
+  every arena symmetric, spawns clear, trampolines bounded
 
 node tools/build.mjs
-  24 modules → 3 files, 319 kB raw / 91 kB gzipped, bundle passes node --check
+  24 modules → one 408 kB file, 120 kB gzipped, and it parses
 ```
 
 `tools/devkit.js` is a browser-side harness (`__playRound`, `__run`, `__full`)

@@ -1,25 +1,28 @@
 # One-click deploy on Render: https://render.com/deploy
 #
-# Works as-is on the free plan, with one caveat: Render's free filesystem is
-# ephemeral, so the world leaderboard resets on every redeploy. To keep it,
-# upgrade the instance, add a disk mounted at /data, and uncomment both blocks
-# below. (Free plans cannot have disks - adding one while on `plan: free`
-# fails the deploy.) If you want a persistent board for free, use Fly.io
-# instead; see fly.toml and DEPLOY.md.
+# This is a static site, not a web service. It used to be the latter, because
+# the game had a matchmaking relay and a world leaderboard to host. Both are
+# gone - a Playables build is not allowed to call out - so there is nothing
+# left to run: the build produces a single dist/index.html and Render's CDN
+# serves it.
+#
+# That is not just tidier, it matters for certification. A free web service
+# spins down after 15 minutes idle and takes the best part of a minute to wake,
+# so a reviewer opening a cold link would sit on a blank page. Static sites on
+# the free plan have no instance and no spin-down.
 services:
   - type: web
     name: steal-the-brainrot
-    runtime: node
-    plan: free
-    buildCommand: node tools/build.mjs --relay=auto --leaderboard=auto
-    startCommand: node server/server.js --root dist
-    healthCheckPath: /health
+    runtime: static
+    buildCommand: node tools/build.mjs
+    staticPublishPath: ./dist
     envVars:
       - key: NODE_VERSION
         value: "20"
-      # - key: DATA_DIR
-      #   value: /data
-    # disk:
-    #   name: brainrot-data
-    #   mountPath: /data
-    #   sizeGB: 1
+    headers:
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: no-referrer

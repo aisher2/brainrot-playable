@@ -323,11 +323,17 @@ try {
    allowed through is the Playables SDK, which the rules explicitly permit. */
 try {
   const DIST = path.join(ROOT, 'dist');
-  if (!fs.existsSync(path.join(DIST, 'bundle.js'))) {
-    throw new Error('dist/bundle.js missing - run `node tools/build.mjs` first');
+  if (!fs.existsSync(path.join(DIST, 'index.html'))) {
+    throw new Error('dist/index.html missing - run `node tools/build.mjs` first');
   }
-  const bundle = fs.readFileSync(path.join(DIST, 'bundle.js'), 'utf8');
   const page = fs.readFileSync(path.join(DIST, 'index.html'), 'utf8');
+  /* The game ships inlined, so there is no bundle.js to audit. Pull the
+     inline script back out of the page - that is the code that actually
+     runs, which is what these assertions are about. */
+  const bundleOpen = page.lastIndexOf('<script>');
+  const bundleClose = page.lastIndexOf('</script>');
+  const bundle = page.slice(bundleOpen + 8, bundleClose);
+  if (bundle.length < 100000) throw new Error('the inlined game script looks too small');
 
   const banned = ['XMLHttpRequest', 'WebSocket', 'EventSource', 'sendBeacon',
                   'RTCPeerConnection', 'socket.io', 'firebase', 'supabase', 'axios'];

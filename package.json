@@ -9,8 +9,6 @@
     "start:csp": "node server/server.js --root dist --csp",
     "start:mock": "node server/server.js --root dist --mock",
     "build": "node tools/build.mjs",
-    "build:single": "node tools/build.mjs --single",
-    "build:playables": "node tools/build.mjs",
     "check": "node tools/check.mjs",
     "solocheck": "node tools/solocheck.mjs",
     "mapcheck": "node tools/mapcheck.mjs",

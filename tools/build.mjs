@@ -32,7 +32,6 @@ const flag = (name, def = '') => {
   return hit ? hit.slice(name.length + 3) : def;
 };
 /** also emit dist/standalone.html - the whole game in one file, zero requests */
-const SINGLE = argv.includes('--single') || argv.includes('--all');
 
 const rel = (p) => path.relative(SRC, p).replace(/\\/g, '/').replace(/\.js$/, '');
 
@@ -196,7 +195,9 @@ fs.rmSync(DIST, { recursive: true, force: true });
 fs.mkdirSync(DIST, { recursive: true });
 
 bundle = 'globalThis.STB_CONFIG = { dev: false };\n' + bundle;
-fs.writeFileSync(path.join(DIST, 'bundle.js'), bundle);
+/* The bundle is inlined into the page, so writing it out as a file too just
+   put an unreferenced 362 kB copy of the game in the deploy. dist/ is one
+   file now: index.html and nothing else. */
 
 let html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 html = html.replace('<script type="module" src="src/main.js"></script>', '<script src="bundle.js" defer></script>');
@@ -234,7 +235,7 @@ const css = fs.readFileSync(path.join(ROOT, 'styles.css'), 'utf8')
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/\n{2,}/g, '\n')
   .replace(/^\s+/gm, '');
-fs.writeFileSync(path.join(DIST, 'styles.css'), css);
+// css is inlined into the page above; no separate file ships
 
 /* Stamp the asset URLs with a content hash.
 
@@ -312,43 +313,15 @@ fs.writeFileSync(path.join(DIST, 'index.html'), hashed);
 const gz = (buf) => zlib.gzipSync(buf, { level: 9 }).length;
 const kb = (n) => (n / 1024).toFixed(1) + ' kB';
 
-/* ------------------------------------------------------------
-   optional: the entire game as one file
-   ------------------------------------------------------------ */
-if (SINGLE) {
-  let one = html
-    .replace('<link rel="stylesheet" href="styles.css">', `<style>\n${css}\n</style>`)
-    .replace('<script src="bundle.js" defer></script>', `<script>\n${bundle}\n</script>`)
-    // a lone file has no siblings to point at: drop the card image and the
-    // file-based icons, keeping the inline SVG icon so it still has a mark
-    .replace(/\n<meta (?:property="og:image[^>]*|name="twitter:image")[^>]*>/g, '')
-    .replace(/\n<link rel="(?:icon|apple-touch-icon)" href="(?!data:)[^"]*"[^>]*>/g, '');
-  if (one.includes('styles.css') || one.includes('bundle.js')) {
-    fail('standalone build still references external files');
-  }
-  fs.writeFileSync(path.join(DIST, 'standalone.html'), one);
-}
+/* There is no separate "standalone" build any more. `--single` used to fold
+   the stylesheet and the bundle into one file as an option; the ordinary
+   build does that unconditionally now, so the flag only ever emitted a
+   duplicate of the page that was already there. */
 
-/* copy public/ verbatim: cover image, robots.txt, per-host config files */
-let copied = 0;
-if (fs.existsSync(PUBLIC)) {
-  /* Recursive now, so a directory in public/ ships as a directory. Added for
-     public/sample/, which carries Google's own plain-html-js-css Playable so
-     the Test Suite can be pointed at a known-good game on the same host and
-     tell us whether a failing check is ours or theirs. Delete that folder once
-     the question is settled - it has no business in a submission package. */
-  const copyDir = (src, dst) => {
-    fs.mkdirSync(dst, { recursive: true });
-    for (const name of fs.readdirSync(src)) {
-      const from = path.join(src, name);
-      const to = path.join(dst, name);
-      if (fs.statSync(from).isDirectory()) { copyDir(from, to); continue; }
-      fs.copyFileSync(from, to);
-      copied++;
-    }
-  };
-  copyDir(PUBLIC, DIST);
-}
+/* public/ is not copied. Nothing in it is referenced by the built page: the
+   icon is a data URI, the stylesheet is inlined, and the per-host config files
+   (netlify, vercel, _headers) describe hosts this is not deployed to. dist/ is
+   one file - index.html - and nothing else. */
 
 const files = fs.readdirSync(DIST)
   .filter((f) => fs.statSync(path.join(DIST, f)).isFile())
@@ -361,17 +334,25 @@ for (const f of files) {
   console.log(`    ${f.padEnd(12)} ${kb(buf.length).padStart(10)}  ${kb(gz(buf)).padStart(10)} gzipped`);
 }
 console.log(`    ${'TOTAL'.padEnd(12)} ${kb(raw).padStart(10)}  ${kb(comp).padStart(10)} gzipped`);
-console.log(`\n  ${modules.size} modules bundled, ${bundle.split('\n').length} lines` +
-  (copied ? `, ${copied} file(s) from public/` : ''));
+console.log(`\n  ${modules.size} modules bundled, ${bundle.split('\n').length} lines`);
 console.log('  offline:   no relay, no board, no external gameplay calls');
 console.log('  playables: SDK script tag included');
 
-// syntax check the emitted bundle before anyone loads it
-const { execFileSync } = await import('node:child_process');
+/* Syntax-check what actually ships. This used to run `node --check` against
+   dist/bundle.js, which no longer exists now the game is inlined - so the
+   check is against the inline script pulled back out of the generated page,
+   which is closer to the truth anyway: it validates the bytes the browser
+   will parse, not an intermediate artifact. new Function parses without
+   executing, so nothing runs here. */
+const emitted = fs.readFileSync(path.join(DIST, 'index.html'), 'utf8');
+const inlineOpen = emitted.lastIndexOf('<script>');
+const inlineClose = emitted.lastIndexOf('</script>');
+if (inlineOpen < 0 || inlineClose < inlineOpen) fail('no inline game script in index.html');
 try {
-  execFileSync(process.execPath, ['--check', path.join(DIST, 'bundle.js')], { stdio: 'pipe' });
+  // eslint-disable-next-line no-new-func
+  new Function(emitted.slice(inlineOpen + 8, inlineClose));
 } catch (e) {
-  fail('the emitted bundle is not valid JavaScript:\n' + (e.stderr?.toString() || e.message));
+  fail('the inlined game script is not valid JavaScript: ' + e.message);
 }
-console.log('  bundle passes node --check');
+console.log('  inlined game script parses cleanly');
 console.log('\n  serve it with:  node server/server.js --root dist\n');
