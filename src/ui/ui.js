@@ -304,7 +304,6 @@ export class UI extends Emitter {
 
 
 
-  setPlaySub(text) { const e = $('playSub'); if (e) e.textContent = text; }
 
   _refreshLevel() {
     const li = levelInfo();
